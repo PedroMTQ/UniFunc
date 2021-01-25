@@ -3,6 +3,20 @@
 UniFunc is a text mining tool that processes and analysis text similarity between a pair of protein function annotations.
 It is mainly used as a cross-linking mechanism or redundancy elimination tool when processing annotations without any sort of database identifiers.
 
+
+## Setting up UniFunc
+
+UniFunc only requires python (developed with python 3.9) and the python package NLTK, both can be installed with conda by executing:
+
+`conda install python`
+
+`conda install -c anaconda nltk `
+
+If you prefer a conda environment is also provided `unifunc_env.yml`, to install it run:
+
+`conda env create -f unifunc_env.yml`
+
+
 ## Using UniFunc
 UniFunc can be run in two modes:
 

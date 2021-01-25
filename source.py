@@ -89,7 +89,6 @@ class Word_Weighter():
         if not self.word_counter:
             print('Building frequency counter into ',self.word_counter_pickled,flush=True)
             print('Adding terms to frequency counter from ',self.uniprot_reference,flush=True)
-
             stop_words = set(stopwords.words("english"))
             with open(self.uniprot_reference) as file:
                 line=file.readline()
