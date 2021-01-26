@@ -3,6 +3,7 @@ from nltk import cluster
 from nltk.tag.perceptron import PerceptronTagger
 from nltk.corpus import wordnet as wn
 from nltk.tag import SequentialBackoffTagger,_pos_tag
+from nltk.stem.porter import PorterStemmer
 from nltk.probability import FreqDist
 from nltk.corpus import stopwords
 from nltk import edit_distance
@@ -20,11 +21,11 @@ unifunc_folder = '/'.join(unifunc_folder)+'/UniFunc/'
 
 def run_unifunc(str1,str2,verbose=False,console_output=False,threshold=None):
     if threshold: threshold=float(threshold)
-    nlp = UniFunc(go_terms_path = 'Resources/go.obo',uniprot_reference = 'Resources/uniprot.tab')
+    nlp = UniFunc()
     nlp.get_similarity_score(str1, str2, verbose=verbose,threshold=threshold,console_output=console_output)
 
 def run_example():
-    nlp = UniFunc(go_terms_path='Resources/go.obo', uniprot_reference='Resources/uniprot.tab')
+    nlp = UniFunc()
     print('####################################')
     print('###############TEST 1###############')
     print('####################################')
@@ -63,11 +64,10 @@ class Word_Weighter():
         except:
             return False
 
-    def is_abbreviation(self,x):
-        if re.search('#[A-Z]{2,}',x):
+    def is_abbreviation(self, x):
+        if re.search('#[a-z]?[A-Z]+', x):
             return True
         return False
-
 
     def generate_n_grams(self,list_words):
         for n_range in self.n_grams_range:
@@ -523,7 +523,7 @@ class Pre_Processer():
                     res.append(current_str)
             if 'SPLIT' in string_to_process:
                 res,parentheses_res = self.connect_gapped_token(res)
-        res=[i for i in res if i]
+        res=[[j.lower() for j in i if j] for i in res if i]
         parentheses_res=[i for i in parentheses_res if i]
         return res,parentheses_res
 
@@ -666,7 +666,8 @@ class Pre_Processer():
 class WordNetTagger(SequentialBackoffTagger):
     def __init__(self,perceptron_tagger,go_terms=None, *args, **kwargs):
         SequentialBackoffTagger.__init__(self, *args, **kwargs)
-         #for universal tagger
+        self.stemmer = PorterStemmer()
+        #for universal tagger
         self.placeholder = 'XXXXX'
         self.perceptron_tagger=perceptron_tagger
         self.go_terms=set()
@@ -681,9 +682,6 @@ class WordNetTagger(SequentialBackoffTagger):
 
     def tag_tokens_perceptron(self, tokens):
         return _pos_tag(tokens, tagset='universal', tagger=self.perceptron_tagger,lang='eng')
-
-    def most_frequent(self,list_to_test):
-        return max(set(list_to_test), key=list_to_test.count)
 
     def choose_tag(self, tokens, index, history):
         word = tokens[index]
@@ -710,12 +708,11 @@ class WordNetTagger(SequentialBackoffTagger):
 
 
 class UniFunc(Pre_Processer, Word_Weighter):
-    def __init__(self,go_terms_path,
-                 uniprot_reference):
+    def __init__(self):
         #this is just used to trigger gene ontologies look up, might remove it
         self.nlp_threshold = 0.8
-        self.go_terms_path=unifunc_folder+go_terms_path
-        self.uniprot_reference=unifunc_folder+uniprot_reference
+        self.go_terms_path=unifunc_folder+'Resources/go.obo'
+        self.uniprot_reference=unifunc_folder+'Resources/uniprot.tab'
         self.n_grams_range = [1]
         self.download_nltk_resources()
         #uses penn treebank corpus
@@ -740,8 +737,10 @@ class UniFunc(Pre_Processer, Word_Weighter):
         self.build_frequency_dict()
         self.pickled_go_syns = self.go_terms_path+'.pickle_syns'
         self.pickled_go_terms = self.go_terms_path+'.pickle_terms'
+        self.pickled_go_dict = self.go_terms_path+'.pickle_dict'
         self.go_syns=set()
         self.go_terms=set()
+        self.go_dict=dict()
         self.parse_go_terms()
         self.wordnet_tagger = WordNetTagger(go_terms=self.go_terms, perceptron_tagger=self.tagger)
         self.tags = {}
@@ -784,6 +783,9 @@ class UniFunc(Pre_Processer, Word_Weighter):
             pickle.dump(self.go_syns, handle,protocol=4)
         with open(self.pickled_go_terms, 'wb') as handle:
             pickle.dump(self.go_terms, handle,protocol=4)
+        with open(self.pickled_go_dict, 'wb') as handle:
+            pickle.dump(self.go_dict, handle,protocol=4)
+
 
 
     def load_go_pickle(self):
@@ -793,6 +795,10 @@ class UniFunc(Pre_Processer, Word_Weighter):
         if os.path.exists(self.pickled_go_terms):
             with open(self.pickled_go_terms, 'rb') as handle:
                 self.go_terms = pickle.load(handle)
+        if os.path.exists(self.pickled_go_dict):
+            with open(self.pickled_go_dict, 'rb') as handle:
+                self.go_dict = pickle.load(handle)
+
 
     def token_list_too_small(self,tokens_list,all_tokens_list):
         res=[]
@@ -806,7 +812,7 @@ class UniFunc(Pre_Processer, Word_Weighter):
 
     def parse_go_terms(self):
         self.load_go_pickle()
-        if not self.go_syns or not self.go_terms:# or not self.go_dict:
+        if not self.go_syns or not self.go_terms or not self.go_dict:
             print('Parsing GO terms with ',self.go_terms_path,flush=True)
             go_terms=set()
             go_dict={}
@@ -856,7 +862,10 @@ class UniFunc(Pre_Processer, Word_Weighter):
             for go_id in go_dict:
                 self.go_syns.add(frozenset(go_dict[go_id]['synonyms']))
             self.go_terms=go_terms
-            #self.go_dict=go_dict
+            print(len(go_dict))
+            self.go_dict=go_dict
+            print(len(go_dict))
+
         self.save_go_pickle()
 
     def has_go_match(self,test_syn,ref_syn):
@@ -951,44 +960,67 @@ class UniFunc(Pre_Processer, Word_Weighter):
             else: res.append(w)
         return res
 
-    def remove_plurals(self,vector1,vector2):
-        res=[]
+    def remove_suffixes(self,vector1):
+        res={}
         for w in vector1:
-            syn_set={w}
-            w2=None
+            res[w]={w}
             #latin plurals
-            if w.endswith('ae'): w2=w[:-1]
-            elif w.endswith('exes'): w2=w[:-2]
-            elif w.endswith('ices'): w2=w[:-4]+'ex'
-            elif w.endswith('eaus'): w2=w[:-1]
-            elif w.endswith('eaux'): w2=w[:-1]
-            elif w.endswith('ia'): w2=w[:-1]+'on'
-            elif w.endswith('ions'): w2=w[:-1]
-            elif w.endswith('es'): w2=w[:-2]+'is'
-            elif w.endswith('os'): w2=w[:-1]
-            elif w.endswith('oes'): w2=w[:-2]
-            elif w.endswith('uses'): w2=w[:-2]
-            elif w.endswith('i'): w2=w[:-1]+'us'
+            if w.endswith('ae'):        res[w].add(w[:-1])
+            if w.endswith('exes'):      res[w].add(w[:-2])
+            if w.endswith('ices'):      res[w].add(w[:-4]+'ex')
+            if w.endswith('eaus'):      res[w].add(w[:-1])
+            if w.endswith('eaux'):      res[w].add(w[:-1])
+            if w.endswith('ia'):        res[w].add(w[:-1]+'on')
+            if w.endswith('ions'):      res[w].add(w[:-1])
+            if w.endswith('es'):        res[w].add(w[:-2]+'is')
+            if w.endswith('os'):        res[w].add(w[:-1])
+            if w.endswith('oes'):       res[w].add(w[:-2])
+            if w.endswith('uses'):      res[w].add(w[:-2])
+            if w.endswith('i'):         res[w].add(w[:-1]+'us')
             #normal plurals
-            elif w.endswith('s'): w2=w[:-1]
-            if w2: syn_set.add(w2)
+            if w.endswith('s'):         res[w].add(w[:-1])
+            #other suffixes
+            if w.endswith('ation'):     res[w].add(w[:-5 ]+'e')
+            if w.endswith('ation'):     res[w].add(w[:-3 ]+'e')
             #other latin plurals
-            if w.endswith('a'):
-                w3=w[:-1]+'um'
-                syn_set.add(w3)
-            if w.endswith('a'):
-                w3=w[:-1]+'on'
-                syn_set.add(w3)
-            if w.endswith('ic'):
-                w3=w[:-1]+'on'
-                syn_set.add(w3)
-            if w.endswith('i'):
-                w3=w[:-1]+'on'
-                syn_set.add(w3)
-            best_syn=self.get_best_syn(syn_set,vector2)
-            if best_syn: res.append(best_syn)
-            else: res.append(w)
+            if w.endswith('a'):         res[w].add(w[:-1]+'um')
+            if w.endswith('a'):         res[w].add(w[:-1]+'on')
+            if w.endswith('ic'):        res[w].add(w[:-1]+'on')
+            if w.endswith('i'):         res[w].add(w[:-1]+'on')
         return res
+
+    def find_matching_suffixes(self,synset1,synset2):
+        #all words
+        matches_found={i:None for i in set(synset1.keys()).union(synset2.keys())}
+        for w1 in synset1:
+            if not matches_found[w1]:
+                synsw1=synset1[w1]
+                for w2 in synset2:
+                    if not matches_found[w2]:
+                        synsw2 = synset2[w2]
+                        syns_intersect=synsw1.intersection(synsw2)
+                        if syns_intersect:
+                            best_syn=syns_intersect.pop()
+                            matches_found[w1]=best_syn
+                            matches_found[w2]=best_syn
+        return matches_found
+
+    def replace_suffixes(self,tokens_list,matches_found):
+        res=[]
+        for i in range(len(tokens_list)):
+            if matches_found[tokens_list[i]]: res.append(matches_found[tokens_list[i]])
+            else: res.append(tokens_list[i])
+        return res
+
+    def get_matching_suffixes(self,vector1,vector2):
+        vector1=[i.lower() for i in vector1]
+        vector2=[i.lower() for i in vector2]
+        synset1=self.remove_suffixes(vector1)
+        synset2=self.remove_suffixes(vector2)
+        matches_found=self.find_matching_suffixes(synset1,synset2)
+        improved_vector1=self.replace_suffixes(vector1,matches_found)
+        improved_vector2=self.replace_suffixes(vector2,matches_found)
+        return improved_vector1,improved_vector2
 
 
 
@@ -1017,10 +1049,8 @@ class UniFunc(Pre_Processer, Word_Weighter):
         if not vector_1 or not vector_2: return 0
         if self.wordnet_tagger.placeholder.lower() in vector_1: vector_1.remove(self.wordnet_tagger.placeholder.lower())
         if self.wordnet_tagger.placeholder.lower() in vector_2: vector_2.remove(self.wordnet_tagger.placeholder.lower())
-        #improve_syn_match adds tokens in lowercase, so we need to convert vector 2 to lower case as well (also the corpus is in lowercase so thats the only way to get tf-idf)
-        improved_vector_1 = self.remove_plurals(vector_1,vector_2)
-        #improved_vector_1 = [t.lower() for t in vector_1]
-        improved_vector_2 = [t.lower() for t in vector_2]
+        #we do this so late because
+        improved_vector_1,improved_vector_2 = self.get_matching_suffixes(vector_1,vector_2)
         v1,v2=self.build_vector(improved_vector_1,improved_vector_2)
         if not any(v1) or not any(v2):            text_score=0
         else:            text_score=1-cluster.util.cosine_distance(v1,v2)
@@ -1159,13 +1189,13 @@ class UniFunc(Pre_Processer, Word_Weighter):
 
 
 if __name__ == '__main__':
-    nlp = UniFunc(go_terms_path = 'Resources/go.obo',uniprot_reference = 'Resources/uniprot.tab')
+    nlp = UniFunc()
     str1='Responsible for trypanothione reduction'
     str2='Protein associated with trypanothione reductase activity'
-    print('Similarity score:',nlp.get_similarity_score(str1,str2,verbose=True))
+    print('Similarity score:',nlp.get_similarity_score(str1,str2,verbose=True,only_return=True))
     str1='Leghemoglobin reductase activity K0002 (EC 0.0.0.0) ID12345 PRK10411.1  '
     str2='Protein associated with trypanothione reductase activity (K0001) ID6789'
-    print('Similarity score:',nlp.get_similarity_score(str1,str2,verbose=False))
+    print('Similarity score:',nlp.get_similarity_score(str1,str2,verbose=True,only_return=True))
 
 
 
