@@ -193,6 +193,7 @@ class Word_Weighter():
             res = self.document_counter / N_docs_with_token
         else:
             res = 1
+        print('word',word,res)
         return res
 
     #when coming from the main nlp, with all of its pre processing
@@ -732,7 +733,7 @@ class UniFunc(Pre_Processer, Word_Weighter):
                                 'accessory','major','related,'
                                 'variable','potential','specific',
                                 'regulation','binding','hypothetical',
-                                'receptor',
+                                'receptor','metabolism',
                                 ]
         self.build_frequency_dict()
         self.pickled_go_syns = self.go_terms_path+'.pickle_syns'
@@ -745,6 +746,11 @@ class UniFunc(Pre_Processer, Word_Weighter):
         self.wordnet_tagger = WordNetTagger(go_terms=self.go_terms, perceptron_tagger=self.tagger)
         self.tags = {}
         self.default_word_count=median([self.word_counter[i] for i in self.word_counter if self.word_counter[i]>1])
+
+
+    def print_citation(self):
+
+        return
 
 
     def tag_tokens_perceptron(self, tokens):
@@ -869,9 +875,9 @@ class UniFunc(Pre_Processer, Word_Weighter):
         self.save_go_pickle()
 
     def has_go_match(self,test_syn,ref_syn):
+        print('check has_go_match')
         for syn_set in self.go_syns:
             if ref_syn in syn_set and test_syn in syn_set:
-                print('has go match')
                 return True
         return False
 
@@ -1030,13 +1036,18 @@ class UniFunc(Pre_Processer, Word_Weighter):
         counter1= self.calculate_scaled_tf_idf(counter1)
         counter2 = self.calculate_tf_idf(iterable2)
         counter2= self.calculate_scaled_tf_idf(counter2)
+        print(counter1)
+        print(counter2)
         all_items = set(counter1.keys()).union(set(counter2.keys()))
         vector1,vector2=[],[]
+        print(all_items)
         for word in all_items:
+            print(word)
             if word in counter1:vector1.append(counter1[word])
             else: vector1.append(0)
             if word in counter2:vector2.append(counter2[word])
             else: vector2.append(0)
+        print('build_vector',vector1,vector2)
         return vector1, vector2
 
     def jaccard_distance(self,label1, label2):
@@ -1190,12 +1201,18 @@ class UniFunc(Pre_Processer, Word_Weighter):
 
 if __name__ == '__main__':
     nlp = UniFunc()
-    str1='Responsible for trypanothione reduction'
-    str2='Protein associated with trypanothione reductase activity'
-    print('Similarity score:',nlp.get_similarity_score(str1,str2,verbose=True,only_return=True))
-    str1='Leghemoglobin reductase activity K0002 (EC 0.0.0.0) ID12345 PRK10411.1  '
-    str2='Protein associated with trypanothione reductase activity (K0001) ID6789'
-    print('Similarity score:',nlp.get_similarity_score(str1,str2,verbose=True,only_return=True))
+    #str1='Responsible for trypanothione reduction'
+    #str2='Protein associated with trypanothione reductase activity'
+    #print('Similarity score:',nlp.get_similarity_score(str1,str2,verbose=True,only_return=True))
+    #str1='Leghemoglobin reductase activity K0002 (EC 0.0.0.0) ID12345 PRK10411.1  '
+    #str2='Protein associated with trypanothione reductase activity (K0001) ID6789'
+    #print('Similarity score:',nlp.get_similarity_score(str1,str2,verbose=True,only_return=True))
+
+
+
+    str1='NADH-quinone oxidoreductase subunit NuoN'
+    str2='NADH-quinone oxidoreductase subunit N'
+    print('Similarity score:',nlp.get_similarity_score(str1,str2,verbose=False))
 
 
 
