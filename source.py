@@ -193,7 +193,6 @@ class Word_Weighter():
             res = self.document_counter / N_docs_with_token
         else:
             res = 1
-        print('word',word,res)
         return res
 
     #when coming from the main nlp, with all of its pre processing
@@ -868,14 +867,11 @@ class UniFunc(Pre_Processer, Word_Weighter):
             for go_id in go_dict:
                 self.go_syns.add(frozenset(go_dict[go_id]['synonyms']))
             self.go_terms=go_terms
-            print(len(go_dict))
             self.go_dict=go_dict
-            print(len(go_dict))
 
         self.save_go_pickle()
 
     def has_go_match(self,test_syn,ref_syn):
-        print('check has_go_match')
         for syn_set in self.go_syns:
             if ref_syn in syn_set and test_syn in syn_set:
                 return True
@@ -1036,18 +1032,13 @@ class UniFunc(Pre_Processer, Word_Weighter):
         counter1= self.calculate_scaled_tf_idf(counter1)
         counter2 = self.calculate_tf_idf(iterable2)
         counter2= self.calculate_scaled_tf_idf(counter2)
-        print(counter1)
-        print(counter2)
         all_items = set(counter1.keys()).union(set(counter2.keys()))
         vector1,vector2=[],[]
-        print(all_items)
         for word in all_items:
-            print(word)
             if word in counter1:vector1.append(counter1[word])
             else: vector1.append(0)
             if word in counter2:vector2.append(counter2[word])
             else: vector2.append(0)
-        print('build_vector',vector1,vector2)
         return vector1, vector2
 
     def jaccard_distance(self,label1, label2):
