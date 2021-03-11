@@ -14,10 +14,22 @@ from math import log10
 import os
 import re
 from sys import platform
+from pathlib import Path
+import requests
+import urllib.request as request
+import shutil
+from contextlib import closing
+from gzip import open as gzip_open
 
 
-unifunc_folder = os.path.abspath(os.path.dirname(__file__)).split('/')[0:-1]
-unifunc_folder = '/'.join(unifunc_folder)+'/UniFunc/'
+if platform.startswith('win'):    SPLITTER = '\\'
+else:                                SPLITTER = '/'
+
+unifunc_folder = os.path.abspath(os.path.dirname(__file__)).split(SPLITTER)[0:-1]
+unifunc_folder = SPLITTER.join(unifunc_folder)+SPLITTER+'UniFunc'+SPLITTER
+if not os.path.exists(unifunc_folder):
+    unifunc_folder = SPLITTER.join(unifunc_folder) + SPLITTER + 'unifunc' + SPLITTER
+
 
 def run_unifunc(str1,str2,verbose=False,console_output=False,threshold=None):
     if threshold: threshold=float(threshold)
@@ -87,69 +99,8 @@ class Word_Weighter():
     def build_frequency_dict(self):
         self.load_word_counter_pickle()
         if not self.word_counter:
-            print('Building frequency counter into ',self.word_counter_pickled,flush=True)
-            print('Adding terms to frequency counter from ',self.uniprot_reference,flush=True)
-            stop_words = set(stopwords.words("english"))
-            with open(self.uniprot_reference) as file:
-                line=file.readline()
-                line=file.readline()
-                while line:
-                    line=line.strip('\n')
-                    func_res=self.process_uniprot(line)
-                    if func_res:
-                        self.document_counter+=1
-                        query,annotation,function_description=func_res
-                        for desc in [annotation,function_description]:
-                            already_added=set()
-                            #each annotation line is a document,each word a token, the whole collection of annotations is the corpus
-                            list_words,parentheses_res,_=self.pre_process_string(desc)
-                            for i in parentheses_res: list_words.append(i)
-                            for sw in list_words:
-                                n_grams=self.generate_n_grams(sw)
-                                #for word in sw:
-                                for word in n_grams:
-                                    lower_word = word.lower()
-                                    if self.is_good_word(lower_word,stop_words):
-                                        if lower_word not in self.word_counter: self.word_counter[lower_word] = 0
-                                        if lower_word not in already_added:
-                                            self.word_counter[lower_word] += 1
-                                            already_added.add(lower_word)
-
-                    line=file.readline()
-                    
-            print('Adding terms to frequency counter from ',self.go_terms_path,flush=True)
-            with open(self.go_terms_path) as file:
-                line=file.readline()
-                while line:
-                    line=line.strip('\n')
-                    split_tokens=None
-                    if line:
-                        if 'name: ' in line[0:6] and 'obsolote' not in line.lower():
-                            go_name=line.replace('name: ','')
-                            split_tokens=self.pre_process_string(go_name)[0]
-                        elif 'synonym: ' in line[0:9] and 'EXACT' in line and 'obsolote' not in line.lower():
-                            go_syn=line.replace('synonym: ','')
-                            go_syn=go_syn.replace('EXACT ','')
-                            go_syn=go_syn.replace('[]','')
-                            split_tokens=self.pre_process_string(go_syn)[0]
-                        elif 'def: ' in line[0:5] and 'Catalysis of the reaction' not in line and 'obsolote' not in line.lower():
-                            go_def=line.replace('def: ','')
-                            go_def=go_def.split('\"')[1]
-                            split_tokens=self.pre_process_string(go_def)[0]
-                    if split_tokens:
-                        already_added = set()
-                        self.document_counter+=1
-                        for sw in split_tokens:
-                            n_grams=self.generate_n_grams(sw)
-                            #for word in sw:
-                            for word in n_grams:
-                                lower_word = word.lower()
-                                if self.is_good_word(lower_word,stop_words):
-                                    if lower_word not in self.word_counter: self.word_counter[lower_word] = 0
-                                    if lower_word not in already_added:
-                                        self.word_counter[lower_word] += 1
-                                        already_added.add(lower_word)
-                    line=file.readline()
+            print('Building frequency counter into ', self.word_counter_pickled, flush=True)
+            self.build_freq_dict_all()
             self.get_metrics_idfs()
             self.save_word_counter_pickle()
 
@@ -169,9 +120,30 @@ class Word_Weighter():
             with open(self.word_counter_pickled, 'rb') as handle:
                 self.word_counter,self.document_counter= pickle.load(handle)
 
+    def save_verbs_set_pickle(self):
+        with open(self.verbs_set_pickled, 'wb') as handle:
+            pickle.dump(self.verbs_set, handle)
+
+    def load_verbs_set_pickle(self):
+        if os.path.exists(self.verbs_set_pickled):
+            with open(self.verbs_set_pickled, 'rb') as handle:
+                self.verbs_set= pickle.load(handle)
+
+    def get_verbs_set(self):
+        self.load_verbs_set_pickle()
+        if not self.verbs_set:
+            self.verbs_set=set()
+            with open(self.verbs_txt) as file:
+                line=file.readline()
+                while line:
+                    line=line.strip('\n')
+                    line=line.split('\t')
+                    line=[i.strip() for i in line if i]
+                    self.verbs_set.update(line)
+                    line=file.readline()
+            self.save_verbs_set_pickle()
 
     def min_max_scale_nlp(self,X,minX,maxX):
-        if minX==0 and maxX==0: return 0
         if minX==maxX: return 1
         return (X-minX)/(maxX-minX)
 
@@ -215,15 +187,16 @@ class Word_Weighter():
         return res
 
     #we scale the weights to understand which tokens are more important within each sentence
-    def calculate_scaled_tf_idf(self,tf_idfs):
+    def calculate_scaled_tf_idf(self,tf_idfs,min_max=False):
         #log10 because some idfs are very divergent, we want to make their distance a bit closer
-        tf_idfs={i:log10(tf_idfs[i]) for i in tf_idfs if tf_idfs[i]}
-        tf_idfs_vals=tf_idfs.values()
-        maxX = max(tf_idfs_vals)
-        minX = min(tf_idfs_vals)
-        for word in tf_idfs:
-            tf_idfs[word] = self.min_max_scale_nlp(tf_idfs[word], minX, maxX)
-            if not tf_idfs[word]: tf_idfs[word]+=+0.01
+        tf_idfs= {i:log10(tf_idfs[i]) for i in tf_idfs if tf_idfs[i]}
+        if min_max:
+            tf_idfs_vals=tf_idfs.values()
+            maxX = max(tf_idfs_vals)
+            minX = min(tf_idfs_vals)
+            for word in tf_idfs:
+                tf_idfs[word] = self.min_max_scale_nlp(tf_idfs[word], minX, maxX)
+                if not tf_idfs[word]: tf_idfs[word]+=+0.01
         return tf_idfs
 
 
@@ -271,18 +244,21 @@ class Pre_Processer():
         return current_str, removed_ecs
 
     def remove_pattern(self, string_to_search, pattern):
+        #this sort of patterns should always be preceded by a not a letter or a digit. or preceded by space ( or [
+        negative_pattern='[A-Za-z\-\d+\_\.\']'
+        compiled_pattern=re.compile('(?<!('+negative_pattern+'))'+pattern+'(?!('+negative_pattern+'))')
         patterns_removed = set()
-        search = re.search(pattern, string_to_search)
+        search = re.search(compiled_pattern, string_to_search)
         while search:
             patterns_removed.add(search.group())
             start = search.span()[0]
             end = search.span()[1]
-            if string_to_search[start + 1] == '(': start += 2
-            if string_to_search[end - 1] == ')': end -= 1
+            #if string_to_search[start + 1] == '(': start += 2
+            #if string_to_search[end - 1] == ')': end -= 1
             string_to_search = list(string_to_search)
             string_to_search[start:end] = ''
             string_to_search = ''.join(string_to_search)
-            search = re.search(pattern, string_to_search)
+            search = re.search(compiled_pattern, string_to_search)
         return string_to_search, patterns_removed
 
     def convert_to_arabic_digits(self, roman_digit):
@@ -334,7 +310,7 @@ class Pre_Processer():
         temp_sentence = str(sentence)
         temp_sentence = temp_sentence.replace('-->', 'to')
         punctuation_set = set(punctuation)
-        for i in ['\'', '-', '.', ',', '+', '(', ')', '[', ']']:
+        for i in ['\'', '-','_', '.', ',', '+', '(', ')', '[', ']','/']:
             punctuation_set.remove(i)
         punctuation_set.add(', ')
         punctuation_set.add(' - ')
@@ -418,6 +394,7 @@ class Pre_Processer():
         return res
 
     def unite_terms(self, string_to_process):
+        #this is to unite certain tokens e.g. flavoprotein,A to flavoprotein A
         string_list = string_to_process.split()
         res = []
         c = 0
@@ -502,30 +479,83 @@ class Pre_Processer():
                 parentheses_res.append(temp)
         return res,parentheses_res
 
+
+    def split_by_alternatives(self,string_to_process):
+        if '/' not in string_to_process: return string_to_process
+        temp=str(string_to_process)
+        res=[]
+        alternatives=string_to_process.split('/')
+        suffix=' '.join(alternatives[-1].split()[1:]).strip()
+        temp=temp.replace(suffix,'').strip()
+        add_split = False
+        for i in temp.split('/'):
+            if i + ' ' + suffix not in res:
+                res.append(i + ' ' + suffix)
+        for i in range(len(res)):
+            if add_split:res[i]='#SPLIT#'+res[i]
+            if res[i].endswith('#SPLIT#'):add_split=True
+            else:add_split=False
+        return '!NEWLINE!'.join(res)
+
+    def remove_extra_parentheses(self,current_str):
+        res=str(current_str)
+        if current_str.count('(') != current_str.count(')'):
+            res = res.strip('()')
+        if current_str.count('[') != current_str.count(']'):
+            res = res.strip('[]')
+        res = res.strip('.')
+        return res
+
+    def split_by_parentheses(self,string_to_process):
+        #this unites pharses split by tokens in parentheses
+        n_parentheses=string_to_process.count('#SPLIT#')/2
+        split_parentheses = string_to_process.split('#SPLIT#')
+        c=0
+        main_res=[]
+        parentheses_res=[]
+        while split_parentheses:
+            sp=split_parentheses.pop(0).strip()
+            if c%2==0:
+                if sp: main_res.append(sp)
+                c+=1
+            else:
+                if sp:parentheses_res.append([sp])
+                if c<=n_parentheses: c+=1
+        res=[main_res]
+        res.extend(parentheses_res)
+        res=[' '.join(i) for i in res]
+        return res
+
+
+
     def final_processing(self, string_to_process):
         new_str = string_to_process.strip(' ')
         new_str=new_str.replace('[]','')
         new_str=new_str.replace('()','')
+        new_str=new_str.replace('_','')
         new_str=new_str.replace('-like ',' ')
+        new_str=new_str.replace('-associated ',' ')
+        if 'biosynth' in new_str:new_str=new_str.replace('biosynth','synth')
+        if new_str.endswith('-like'):new_str=new_str.replace('-like','')
+        if new_str.endswith('-associated'):new_str=new_str.replace('-associated','')
         new_str = new_str.replace('. ', '!NEWLINE!')
+        new_str = new_str.replace(' / ', '!NEWLINE!')
         new_str = new_str.replace('\t', '!NEWLINE!')
+        new_str=self.split_by_alternatives(new_str)
         lines = new_str.split('!NEWLINE!')
         res = []
-        parentheses_res=[]
         for line in lines:
-            split_parentheses = line.split('#SPLIT')
+            #split_parentheses = line.split('#SPLIT#')
+            #split_parentheses = [i for i in split_parentheses if i]
+            split_parentheses=self.split_by_parentheses(line)
             for current_str in split_parentheses:
-                current_str=current_str.strip('[]().')
+                current_str=self.remove_extra_parentheses(current_str)
                 current_str = self.unite_terms(current_str)
-                current_str = [i.strip('[]().') for i in current_str]
-                current_str = [i for i in current_str if i]
-                if current_str:
-                    res.append(current_str)
-            if 'SPLIT' in string_to_process:
-                res,parentheses_res = self.connect_gapped_token(res)
+                current_str = [i.strip('.') for i in current_str]
+                current_str = [self.remove_extra_parentheses(i) for i in current_str if i]
+                res.append(current_str)
         res=[[j.lower() for j in i if j] for i in res if i]
-        parentheses_res=[i for i in parentheses_res if i]
-        return res,parentheses_res
+        return res
 
 
     def remove_go_obo_identifiers(self, sentence):
@@ -542,11 +572,9 @@ class Pre_Processer():
 
         cant keep KEGG because GO.obo has no distinction between KEGG's identifiers types...
         '''
-        go_obo_pattern = re.compile('\[('
-                                    'goc|PR|CL|Wikipedia|CORUM|MetaCyc|GOC|ISBN|PMID|Reactome|CHEBI|GO|VZ|vz|gOC|HGNC|KEGG|KEGG_REACTION|UBERON|Pfam|RESID|MA|SO|UniPathway|MP|BRENDA|DOI|pmid|Wikipeda|Wikilpedia|MGI|DDANAT|PO|ABA'
-                                    '):[A-Za-z\d\-]+(,\s('
-                                    'goc|PR|CL|Wikipedia|CORUM|MetaCyc|GOC|ISBN|PMID|Reactome|CHEBI|GO|VZ|vz|gOC|HGNC|KEGG|KEGG_REACTION|UBERON|Pfam|RESID|MA|SO|UniPathway|MP|BRENDA|DOI|pmid|Wikipeda|Wikilpedia|MGI|DDANAT|PO|ABA'
-                                    '):[A-Za-z\d\-]+)*\]')
+        go_obo_pattern = '\[(goc|PR|CL|Wikipedia|CORUM|MetaCyc|GOC|ISBN|PMID|Reactome|CHEBI|GO|VZ|vz|gOC|HGNC|KEGG|KEGG_REACTION|UBERON|Pfam|RESID|MA|SO|UniPathway|MP|BRENDA|DOI|pmid|' \
+                         'Wikipeda|Wikilpedia|MGI|DDANAT|PO|ABA):[A-Za-z\d\-]+(,\s(goc|PR|CL|Wikipedia|CORUM|MetaCyc|GOC|ISBN|PMID|Reactome|CHEBI|GO|VZ|vz|gOC|HGNC|KEGG|KEGG_REACTION|' \
+                         'UBERON|Pfam|RESID|MA|SO|UniPathway|MP|BRENDA|DOI|pmid|Wikipeda|Wikilpedia|MGI|DDANAT|PO|ABA):[A-Za-z\d\-]+)*\]'
         res, go_obo_ids = self.remove_pattern(sentence, go_obo_pattern)
         go_obo_ids_res = {}
         http_pattern = re.compile('\[http.*\]')
@@ -592,14 +620,14 @@ class Pre_Processer():
         res, removed_ecs = self.remove_ecs(res, required_level=1)
         res = res.replace(' enzyme_ec:', '')
         dict_ids['enzyme_ec'].update(removed_ecs)
-        tcdb_pattern = re.compile('(?<![A-Za-z])\(TC\s\d\.[A-Z\-](\.(\d+|\-)){1,2}\)')
-        ko_pattern = re.compile('(?<![A-Za-z])K\d{4,}')
-        tigrfam_pattern = re.compile('(?<![A-Za-z])TIGR\d{3,}')
-        duf_pattern = re.compile('(?<![A-Za-z])(DUF|duf)\d{2,}')
-        pfam_pattern = re.compile('(?<![A-Za-z])((U|u)?PF|pf)\d{3,}')
-        cog_pattern = re.compile('(?<![A-Za-z])(COG|cog)\d{3,}')
-        go_pattern = re.compile('(?<![A-Za-z])GO:?\d{3,}')
-        pubmed_pattern = re.compile('(?<![A-Za-z])PubMed:\d+')
+        tcdb_pattern = 'TC\s\d\.[A-Z\-](\.(\d+|\-)){1,2}'
+        ko_pattern = 'K\d{4,}'
+        tigrfam_pattern = 'TIGR\d{3,}'
+        duf_pattern = '(DUF|duf)\d{2,}'
+        pfam_pattern = '((U|u)?PF|pf)\d{3,}'
+        cog_pattern = '(COG|cog)\d{3,}'
+        go_pattern = 'GO:?\d{3,}'
+        pubmed_pattern = 'PubMed:\d+'
 
         res, removed_ids = self.remove_pattern(res, tcdb_pattern)
         res = res.replace(' tcdb:', '')
@@ -635,16 +663,26 @@ class Pre_Processer():
 
 
     def pre_process_string(self, sentence):
-        if not sentence: return [], [],[]
+        if not sentence: return [], []
         res,dict_ids = self.remove_common_identifiers(sentence)
         res = self.replace_punctuation(res)
 
-        digit_pattern = re.compile('[^A-Za-z][\s\(](\d+(\.\d+)?)[\s\)]')
+        digit_pattern = '\d+(\.\d+)?'
         res, _ = self.remove_pattern(res, digit_pattern)
+        for bio_pattern in [
+            '[A-Z\d]+_[A-Z\d]+(_[A-Z\d]+)?',
+            '[A-Z]+\d{3,}(\.\d+)?([A-Z]+)?',
+            '[a-z]{3,}([A-Z]|\d+)(\d+)?',
+            '[A-Z]{3,}(\d+)?',
+            '[A-Z]+[a-z]+[A-Z]+',
+            '[A-Z]\d+-\d+',
+            '[A-Z][a-z]+\d+',
+            '\d[A-Z]',
+        ]:
+            res, ids_removed = self.remove_pattern(res, bio_pattern)
+            dict_ids['others'].update(ids_removed)
 
-        id_pattern = re.compile('(?<![a-z])[A-Z]+\d{3,}(\.\d+)?([A-Z]+)?')
-        res, ids_removed = self.remove_pattern(res, id_pattern)
-        dict_ids['others'].update(ids_removed)
+
         # cleaning blank parenthesis
         res, _ = self.remove_pattern(res, '\(\s+\)')
         res, _ = self.remove_pattern(res, '\[\s+\]')
@@ -659,8 +697,8 @@ class Pre_Processer():
             else:
                 for id_str in dict_ids[id_type]:
                     all_ids.add(id_type + ':' + id_str)
-        proper_tokens,parentheses_tokens=self.final_processing(res)
-        return proper_tokens,parentheses_tokens, all_ids
+        proper_tokens=self.final_processing(res)
+        return proper_tokens, all_ids
 
 
 class WordNetTagger(SequentialBackoffTagger):
@@ -706,20 +744,295 @@ class WordNetTagger(SequentialBackoffTagger):
         elif go_res: return go_res
         else: return None
 
+class Metadata():
 
-class UniFunc(Pre_Processer, Word_Weighter):
-    def __init__(self):
+    # this unzips to the same directory!
+    def gunzip(self,source_filepath, dest_filepath=None, block_size=65536, remove_source=True):
+        if not dest_filepath:
+            dest_filepath = source_filepath.strip('.gz')
+        if os.path.isdir(dest_filepath):
+            file_name = source_filepath.split(SPLITTER)[-1].replace('.gz', '')
+            dest_filepath = add_slash(dest_filepath) + file_name
+        print('Gunzipping ', source_filepath, 'to', dest_filepath, flush=True)
+        with gzip_open(source_filepath, 'rb') as s_file, \
+                open(dest_filepath, 'wb') as d_file:
+            while True:
+                block = s_file.read(block_size)
+                if not block:
+                    break
+                else:
+                    d_file.write(block)
+            d_file.write(block)
+        if remove_source: os.remove(source_filepath)
+
+    def download_file_http(self, url, file_path, c):
+        if c > 5:
+            self.download_file_http_failsafe(url, file_path)
+        else:
+            with requests.get(url, stream=True) as r:
+                with open(file_path, 'wb') as f:
+                    shutil.copyfileobj(r.raw, f)
+
+    # slower but safer
+    def download_file_http_failsafe(self, url, file_path):
+        with requests.Session() as session:
+            get = session.get(url, stream=True)
+            if get.status_code == 200:
+                with open(file_path, 'wb') as f:
+                    for chunk in get.iter_content(chunk_size=1024):
+                        f.write(chunk)
+
+    def download_file_ftp(self, url, file_path):
+        with closing(request.urlopen(url)) as r:
+            with open(file_path, 'wb') as f:
+                shutil.copyfileobj(r, f)
+
+    def download_file(self, url, output_folder='', retry_limit=10):
+        file_path = output_folder + url.split('/')[-1]
+        try:
+            target_file = request.urlopen(url)
+        except:
+            print('Cannot download target url', url)
+            return
+        target_size = target_file.info()['Content-Length']
+        transfer_encoding = target_file.info()['Transfer-Encoding']
+        if target_size: target_size = int(target_size)
+        if os.path.exists(file_path):
+            if transfer_encoding == 'chunked':
+                return
+            elif os.stat(file_path).st_size == target_size:
+                print('Not downloading from ' + url + ' since file was already found!', flush=True)
+                return
+            else:
+                os.remove(file_path)
+        print('Downloading from ' + url + '. The file will be kept in ' + output_folder, flush=True)
+        c = 0
+        while c <= retry_limit:
+            if 'ftp' in url:
+                self.download_file_ftp(url, file_path)
+            else:
+                self.download_file_http(url, file_path, c)
+            if transfer_encoding == 'chunked': return
+            if os.stat(file_path).st_size == target_size: return
+            c += 1
+        print('Did not manage to download the following url correctly:\n' + url)
+        raise Exception
+
+    def get_taxon_ids_NOGT(self, url):
+        webpage = None
+        c = 0
+        while not webpage and c <= 10:
+            req = requests.get(url)
+            try:
+                webpage = req.text
+            except:
+                c += 1
+        taxons_search = re.findall('href="\d+/"', webpage)
+        taxons = [re.search('\d+', i).group() for i in taxons_search]
+        return taxons
+
+    def download_all_metadata(self):
+        pfam_metadata = 'ftp://ftp.ebi.ac.uk/pub/databases/Pfam/current_release/Pfam-A.hmm.dat.gz'
+        ko_list = 'ftp://ftp.genome.jp/pub/db/kofam/ko_list.gz'
+        tigrfam_role_names = 'ftp://ftp.tigr.org/pub/data/TIGRFAMs/TIGR_ROLE_NAMES'
+        ncbi_metadata = 'https://ftp.ncbi.nlm.nih.gov/hmm/current/hmm_PGAP.tsv'
+
+        for url in [pfam_metadata,ko_list,tigrfam_role_names,ncbi_metadata]:
+            self.download_file(url,output_folder=self.metadata_folder)
+
+        eggnog_downloads_page = 'http://eggnog5.embl.de/download/latest/per_tax_level/'
+        for taxon_id in self.get_taxon_ids_NOGT(eggnog_downloads_page):
+            url = 'http://eggnog5.embl.de/download/latest/per_tax_level/' + str(taxon_id) + '/' + str(taxon_id) + '_annotations.tsv.gz'
+            self.download_file(url,output_folder=self.metadata_folder)
+        for file in os.listdir(self.metadata_folder):
+            if file.endswith('.gz'):
+                self.gunzip(source_filepath=self.metadata_folder+file,dest_filepath=self.metadata_folder+file.strip('.gz'))
+
+    def build_freq_dict_uniprot_reference(self):
+        file_reference=self.unifunc_resources_folder + 'uniprot.tab'
+        print('Adding terms to frequency counter from ', file_reference, flush=True)
+        stop_words = set(stopwords.words("english"))
+        with open(file_reference) as file:
+            line = file.readline()
+            line = file.readline()
+            while line:
+                line = line.strip('\n')
+                func_res = self.process_uniprot(line)
+                if func_res:
+                    self.document_counter += 1
+                    query, annotation, function_description = func_res
+                    for desc in [annotation, function_description]:
+                        already_added = set()
+                        # each annotation line is a document,each word a token, the whole collection of annotations is the corpus
+                        list_words = self.pre_process_string(desc)[0]
+                        for sw in list_words:
+                            n_grams = self.generate_n_grams(sw)
+                            # for word in sw:
+                            for word in n_grams:
+                                lower_word = word.lower()
+                                if self.is_good_word(lower_word, stop_words):
+                                    if lower_word not in self.word_counter: self.word_counter[lower_word] = 0
+                                    if lower_word not in already_added:
+                                        self.word_counter[lower_word] += 1
+                                        already_added.add(lower_word)
+                line = file.readline()
+
+    def add_to_word_counter(self,split_tokens):
+        stop_words = set(stopwords.words("english"))
+        if split_tokens:
+            already_added = set()
+            self.document_counter += 1
+            for sw in split_tokens:
+                n_grams = self.generate_n_grams(sw)
+                # for word in sw:
+                for word in n_grams:
+                    lower_word = word.lower()
+                    if self.is_good_word(lower_word, stop_words):
+                        if lower_word not in self.word_counter: self.word_counter[lower_word] = 0
+                        if lower_word not in already_added:
+                            self.word_counter[lower_word] += 1
+                            already_added.add(lower_word)
+
+    def build_freq_dict_go_terms(self):
+        print('Adding terms to frequency counter from ', self.go_terms_path, flush=True)
+        with open(self.go_terms_path) as file:
+            line = file.readline()
+            while line:
+                line = line.strip('\n')
+                split_tokens = None
+                if line:
+                    if 'name: ' in line[0:6] and 'obsolote' not in line.lower():
+                        go_name = line.replace('name: ', '')
+                        split_tokens = self.pre_process_string(go_name)[0]
+                    elif 'synonym: ' in line[0:9] and 'EXACT' in line and 'obsolote' not in line.lower():
+                        go_syn = line.replace('synonym: ', '')
+                        go_syn = go_syn.replace('EXACT ', '')
+                        go_syn = go_syn.replace('[]', '')
+                        split_tokens = self.pre_process_string(go_syn)[0]
+                    elif 'def: ' in line[
+                                    0:5] and 'Catalysis of the reaction' not in line and 'obsolote' not in line.lower():
+                        go_def = line.replace('def: ', '')
+                        go_def = go_def.split('\"')[1]
+                        split_tokens = self.pre_process_string(go_def)[0]
+                    self.add_to_word_counter(split_tokens)
+                line = file.readline()
+
+    def build_freq_dict_pfam(self):
+        file_reference=self.metadata_folder+'Pfam-A.hmm.dat'
+        print('Adding terms to frequency counter from ', file_reference, flush=True)
+        with open(file_reference) as file:
+            line = file.readline()
+            while line:
+                line = line.strip('\n').split('   ')
+                if len(line) == 2:
+                    row_header, row_description = line
+                    if row_header == '#=GF ID':
+                        stop = True
+
+                    elif row_header == '#=GF DE' and stop:
+                        stop = False
+                        split_tokens = self.pre_process_string(row_description)[0]
+                        self.add_to_word_counter(split_tokens)
+                line = file.readline()
+
+    def build_freq_dict_kofam(self):
+        file_reference=self.metadata_folder+'ko_list'
+        print('Adding terms to frequency counter from ', file_reference, flush=True)
+        with open(file_reference) as file:
+            line = file.readline()
+            while line:
+                line = line.strip('\n').split('\t')
+                description = line[-1]
+                if '[EC:' in description:
+                    description, temp_links = description.split('[EC:')
+                split_tokens = self.pre_process_string(description)[0]
+                self.add_to_word_counter(split_tokens)
+                line = file.readline()
+
+    def build_freq_dict_tigrfam(self):
+        file_reference = self.metadata_folder + 'TIGR_ROLE_NAMES'
+        print('Adding terms to frequency counter from ', file_reference, flush=True)
+
+        with open(file_reference) as file:
+            line = file.readline()
+            while line:
+                line = line.strip('\n').split('\t')
+                description=line[3]
+                if description not in ['Unknown', 'Other', 'General']:
+                    split_tokens = self.pre_process_string(description)[0]
+                    self.add_to_word_counter(split_tokens)
+                line = file.readline()
+
+    def build_freq_dict_pfm(self):
+        file_reference = self.metadata_folder + 'hmm_PGAP.tsv'
+        print('Adding terms to frequency counter from ', file_reference, flush=True)
+
+        with open(file_reference) as file:
+            line = file.readline()
+            line = file.readline()
+            while line:
+                line = line.strip('\n').split('\t')
+                description=line[10]
+                description = description.replace('(Provisional)', '')
+                split_tokens = self.pre_process_string(description)[0]
+                self.add_to_word_counter(split_tokens)
+                line = file.readline()
+
+    def build_freq_dict_eggnog(self):
+        for f in os.listdir(self.metadata_folder):
+            if f.endswith('_annotations.tsv'):
+                file_reference = self.metadata_folder + f
+                print('Adding terms to frequency counter from ', file_reference, flush=True)
+                with open(file_reference) as file:
+                    line = file.readline()
+                    while line:
+                        line = line.strip('\n').split('\t')
+                        description = line[3]
+                        split_tokens = self.pre_process_string(description)[0]
+                        self.add_to_word_counter(split_tokens)
+                        line = file.readline()
+
+    def build_freq_dict_all(self):
+        self.build_freq_dict_uniprot_reference()
+        self.build_freq_dict_go_terms()
+        self.build_freq_dict_pfam()
+        self.build_freq_dict_kofam()
+        self.build_freq_dict_tigrfam()
+        self.build_freq_dict_pfm()
+        self.build_freq_dict_eggnog()
+
+
+
+
+
+
+
+
+
+
+class UniFunc(Pre_Processer, Word_Weighter, Metadata):
+    def __init__(self,compile_metadata=False):
         #this is just used to trigger gene ontologies look up, might remove it
-        self.nlp_threshold = 0.8
-        self.go_terms_path=unifunc_folder+'Resources/go.obo'
-        self.uniprot_reference=unifunc_folder+'Resources/uniprot.tab'
+        self.nlp_threshold = 0.9
         self.n_grams_range = [1]
+        str_n_gram = '_'.join([str(i) for i in self.n_grams_range])
+        self.unifunc_resources_folder=unifunc_folder+'Resources/'
+        self.go_terms_path=self.unifunc_resources_folder+'go.obo'
+        self.verbs_txt=self.unifunc_resources_folder+'verbs.tab'
+        self.word_counter_pickled = self.unifunc_resources_folder+'frequency_dict_n_grams_'+str_n_gram+'.pickle'
+        self.verbs_set_pickled = self.unifunc_resources_folder+'verbs_set.pickle'
+        if compile_metadata:
+            self.metadata_folder=self.unifunc_resources_folder+'Metadata_dbs/'
+            if not os.path.exists(self.metadata_folder) and not os.path.exists(self.word_counter_pickled):
+                Path(self.metadata_folder).mkdir(parents=True, exist_ok=True)
+                self.download_all_metadata()
+
         self.download_nltk_resources()
         #uses penn treebank corpus
         self.tagger = PerceptronTagger()
-        str_n_gram = '_'.join([str(i) for i in self.n_grams_range])
-        self.word_counter_pickled = unifunc_folder+'Resources/frequency_dict_n_grams_'+str_n_gram+'.pickle'
+
         self.word_counter={}
+        self.verbs_set={}
         self.document_counter=0
         self.good_identifiers={'enzyme_ec','tcdb','kegg_ko','tigrfam','pfam','cog','go','viralzone','seq_onto'}
         self.words_to_remove = ['mainrole','sub1role','protein','proteins',
@@ -731,10 +1044,10 @@ class UniFunc(Pre_Processer, Word_Weighter):
                                 'related','large','small',
                                 'accessory','major','related,'
                                 'variable','potential','specific',
-                                'regulation','binding','hypothetical',
-                                'receptor','metabolism',
+                                'hypothetical','particle','particles',
                                 ]
         self.build_frequency_dict()
+        self.get_verbs_set()
         self.pickled_go_syns = self.go_terms_path+'.pickle_syns'
         self.pickled_go_terms = self.go_terms_path+'.pickle_terms'
         self.pickled_go_dict = self.go_terms_path+'.pickle_dict'
@@ -750,6 +1063,8 @@ class UniFunc(Pre_Processer, Word_Weighter):
     def print_citation(self):
 
         return
+
+
 
 
     def tag_tokens_perceptron(self, tokens):
@@ -838,7 +1153,7 @@ class UniFunc(Pre_Processer, Word_Weighter):
 
                         elif 'name: ' in line[0:6]:
                             go_name=line.replace('name: ','')
-                            split_tokens,parentheses_tokens,all_ids=self.pre_process_string(go_name)
+                            split_tokens,all_ids=self.pre_process_string(go_name)
                             for i in split_tokens:
                                 tags=self.tag_tokens_perceptron(i)
                                 for t in tags:
@@ -856,7 +1171,7 @@ class UniFunc(Pre_Processer, Word_Weighter):
                             go_syn=go_syn.replace('EXACT ','')
                             go_syn=go_syn.replace('[]','')
 
-                            split_tokens,parentheses_tokens,all_ids=self.pre_process_string(go_syn)
+                            split_tokens,all_ids=self.pre_process_string(go_syn)
                             for token_list in split_tokens:
                                 if not self.token_list_too_small(token_list,split_tokens):
                                     go_dict[go_id]['synonyms'].add(' '.join(token_list))
@@ -868,8 +1183,7 @@ class UniFunc(Pre_Processer, Word_Weighter):
                 self.go_syns.add(frozenset(go_dict[go_id]['synonyms']))
             self.go_terms=go_terms
             self.go_dict=go_dict
-
-        self.save_go_pickle()
+            self.save_go_pickle()
 
     def has_go_match(self,test_syn,ref_syn):
         for syn_set in self.go_syns:
@@ -880,6 +1194,7 @@ class UniFunc(Pre_Processer, Word_Weighter):
 
 
     ####NLP SCORING
+
 
     def remove_unwanted_tokens(self,tagged_tokens):
         '''
@@ -907,7 +1222,7 @@ class UniFunc(Pre_Processer, Word_Weighter):
             if t[1] not in ['NOUN']:
                 if t[1] not in self.tags: self.tags[t[1]]=set()
                 self.tags[t[1]].add(t[0])
-            if t[1] not in tags_to_remove and len(t[0])>1 and t[0].lower() not in self.words_to_remove and t[0] not in stop_words:
+            if t[1] not in tags_to_remove and len(t[0])>1 and t[0].lower() not in self.words_to_remove and t[0] not in stop_words and t[0] not in self.verbs_set:
                 res.append(t[0])
 
         return res
@@ -934,7 +1249,8 @@ class UniFunc(Pre_Processer, Word_Weighter):
             wordnet_tagged_tokens = self.tag_tokens_wordnet(temp_tokens)
             tagged_tokens=self.choose_best_tagging(wordnet_tagged_tokens,default_tagged_tokens)
             removed_tags = self.remove_unwanted_tokens(tagged_tokens)
-            res.append(removed_tags)
+            if removed_tags:
+                res.append(removed_tags)
         return res
 
 
@@ -962,12 +1278,17 @@ class UniFunc(Pre_Processer, Word_Weighter):
             else: res.append(w)
         return res
 
-    def remove_suffixes(self,vector1):
+    def add_alternative_tokens(self,vector1):
+        #this will mostly add alternative suffixes
         res={}
         for w in vector1:
             res[w]={w}
+
+            if w=='decarboxylase': res[w].add('carboxy-lyase')
+            elif w=='carboxy-lyase': res[w].add('decarboxylase')
             #latin plurals
             if w.endswith('ae'):        res[w].add(w[:-1])
+            if w.endswith('er'):        res[w].add(w[:-2])
             if w.endswith('exes'):      res[w].add(w[:-2])
             if w.endswith('ices'):      res[w].add(w[:-4]+'ex')
             if w.endswith('eaus'):      res[w].add(w[:-1])
@@ -984,14 +1305,19 @@ class UniFunc(Pre_Processer, Word_Weighter):
             #other suffixes
             if w.endswith('ation'):     res[w].add(w[:-5 ]+'e')
             if w.endswith('ation'):     res[w].add(w[:-3 ]+'e')
+            if w.endswith('esis'):      res[w].add(w[:-3 ]+'tic')
+            if w.endswith('etic'):      res[w].add(w[:-3 ]+'sis')
             #other latin plurals
             if w.endswith('a'):         res[w].add(w[:-1]+'um')
             if w.endswith('a'):         res[w].add(w[:-1]+'on')
             if w.endswith('ic'):        res[w].add(w[:-1]+'on')
             if w.endswith('i'):         res[w].add(w[:-1]+'on')
+            #remove parentheses
+            if w.startswith('[') and w.endswith(']'): res[w].add(w.strip('[]'))
+            if w.startswith('(') and w.endswith(')'): res[w].add(w.strip('()'))
         return res
 
-    def find_matching_suffixes(self,synset1,synset2):
+    def find_matching_tokens(self,synset1,synset2):
         #all words
         matches_found={i:None for i in set(synset1.keys()).union(synset2.keys())}
         for w1 in synset1:
@@ -999,15 +1325,19 @@ class UniFunc(Pre_Processer, Word_Weighter):
                 synsw1=synset1[w1]
                 for w2 in synset2:
                     if not matches_found[w2]:
-                        synsw2 = synset2[w2]
-                        syns_intersect=synsw1.intersection(synsw2)
-                        if syns_intersect:
-                            best_syn=syns_intersect.pop()
-                            matches_found[w1]=best_syn
-                            matches_found[w2]=best_syn
+                        if w1==w2:
+                            matches_found[w1]=w2
+                            matches_found[w2]=w1
+                        else:
+                            synsw2 = synset2[w2]
+                            syns_intersect=synsw1.intersection(synsw2)
+                            if syns_intersect:
+                                best_syn=syns_intersect.pop()
+                                matches_found[w1]=best_syn
+                                matches_found[w2]=best_syn
         return matches_found
 
-    def replace_suffixes(self,tokens_list,matches_found):
+    def replace_tokens_with_alternatives(self,tokens_list,matches_found):
         res=[]
         for i in range(len(tokens_list)):
             if matches_found[tokens_list[i]]: res.append(matches_found[tokens_list[i]])
@@ -1017,11 +1347,11 @@ class UniFunc(Pre_Processer, Word_Weighter):
     def get_matching_suffixes(self,vector1,vector2):
         vector1=[i.lower() for i in vector1]
         vector2=[i.lower() for i in vector2]
-        synset1=self.remove_suffixes(vector1)
-        synset2=self.remove_suffixes(vector2)
-        matches_found=self.find_matching_suffixes(synset1,synset2)
-        improved_vector1=self.replace_suffixes(vector1,matches_found)
-        improved_vector2=self.replace_suffixes(vector2,matches_found)
+        synset1=self.add_alternative_tokens(vector1)
+        synset2=self.add_alternative_tokens(vector2)
+        matches_found=self.find_matching_tokens(synset1,synset2)
+        improved_vector1=self.replace_tokens_with_alternatives(vector1,matches_found)
+        improved_vector2=self.replace_tokens_with_alternatives(vector2,matches_found)
         return improved_vector1,improved_vector2
 
 
@@ -1086,6 +1416,28 @@ class UniFunc(Pre_Processer, Word_Weighter):
         return round(score,5)
 
 
+    def extract_bad_identifier_from_tokens(self,bad_identifiers,tokens_list):
+        all_tokens = set()
+        for tl in tokens_list:
+            for token in tl: all_tokens.add(token.lower())
+        res=[]
+        temp_bad_identifiers=set([i.lower() for i in bad_identifiers])
+        to_remove=temp_bad_identifiers.intersection(all_tokens)
+        for tl in tokens_list:
+            temp=[]
+            for token in tl:
+                if token.lower() not in to_remove: temp.append(token)
+            res.append(temp)
+        return res,to_remove
+
+    def clean_tokens_list_of_identifiers(self,bad_identifiers_1,bad_identifiers_2,tokens_lists_1,tokens_lists_2):
+        temp_tokens_list_1,temp_bad_identifiers_1 = self.extract_bad_identifier_from_tokens(bad_identifiers_2,tokens_lists_1)
+        temp_bad_identifiers_1.update(bad_identifiers_1)
+        temp_bad_identifiers_1=set([i.upper() for i in temp_bad_identifiers_1])
+        temp_tokens_list_2,temp_bad_identifiers_2 = self.extract_bad_identifier_from_tokens(bad_identifiers_1,tokens_lists_2)
+        temp_bad_identifiers_2.update(bad_identifiers_2)
+        temp_bad_identifiers_2=set([i.upper() for i in temp_bad_identifiers_2])
+        return temp_tokens_list_1,temp_tokens_list_2,temp_bad_identifiers_1,temp_bad_identifiers_2
 
     def get_similarity_score(self,string_1, string_2,console_output=None,verbose=False,only_text=False,threshold=None,only_return=False):
         if console_output: redirect_verbose=open(console_output,'a+')
@@ -1100,8 +1452,8 @@ class UniFunc(Pre_Processer, Word_Weighter):
         temp_string_2=str(string_2)
         #NLP SCORING
         #we dont currently take into account parentheses information (except if its an abbreviation), as it often adds counfounders
-        tokens_lists_1,parentheses_tokens_1,ids_removed_1 = self.pre_process_string(temp_string_1)
-        tokens_lists_2,parentheses_tokens_2,ids_removed_2 = self.pre_process_string(temp_string_2)
+        tokens_lists_1,ids_removed_1 = self.pre_process_string(temp_string_1)
+        tokens_lists_2,ids_removed_2 = self.pre_process_string(temp_string_2)
         if verbose:
             print('We pre-processed our strings, here are the tokens and identifiers for each string:',flush=True,file=redirect_verbose)
             print('\tList of tokens for string 1:',tokens_lists_1,flush=True,file=redirect_verbose)
@@ -1123,7 +1475,9 @@ class UniFunc(Pre_Processer, Word_Weighter):
         if verbose: print('There was no intersection between any of the common database identifiers, so we will keep analysing our strings!',flush=True,file=redirect_verbose)
         #to avoid using the taggers unnecessarily we first check if there are any intersections
         token_intersection = self.check_token_intersection(tokens_lists_1,tokens_lists_2)
-        if not token_intersection:
+        tokens_lists_1,tokens_lists_2,bad_identifiers_1,bad_identifiers_2=self.clean_tokens_list_of_identifiers(bad_identifiers_1,bad_identifiers_2,tokens_lists_1,tokens_lists_2)
+        bad_ids_intersection = bad_identifiers_1.intersection(bad_identifiers_2)
+        if not token_intersection and not bad_ids_intersection:
             if verbose:
                 print('There was no intersection of tokens so we will stop here!',flush=True,file=redirect_verbose)
             return self.get_output(score=0,redirect_verbose=redirect_verbose,console_output=console_output,threshold=threshold,only_return=only_return)
@@ -1136,8 +1490,12 @@ class UniFunc(Pre_Processer, Word_Weighter):
             print('\tList of tokens for string 2:',vector_2_list,flush=True,file=redirect_verbose)
         text_score_list=[]
         min_len=min(len(vector_1_list),len(vector_2_list))
+        all_vector_1=set()
+        all_vector_2=set()
         for vector_1 in vector_1_list:
+            all_vector_1.update(vector_1)
             for vector_2 in vector_2_list:
+                all_vector_2.update(vector_2)
                 current_score=self.score_text(vector_1,vector_2)
                 text_score_list.append(current_score)
                 if verbose:
@@ -1145,6 +1503,17 @@ class UniFunc(Pre_Processer, Word_Weighter):
                     print('\t',vector_1,flush=True,file=redirect_verbose)
                     print('\t',vector_2,flush=True,file=redirect_verbose)
                     print('Similarity score between these two vectors was ',round(current_score,5),flush=True,file=redirect_verbose)
+        #some annotations are split into multiple sentences when they shouldn't. so we merge all the tokens and check their similarity here
+        if all_vector_1 and all_vector_2:
+            all_vector_score = self.score_text(all_vector_1, all_vector_2)
+            text_score_list.append(all_vector_score)
+            if verbose:
+                print('Finding similarity between:', flush=True, file=redirect_verbose)
+                print('\t', all_vector_1, flush=True, file=redirect_verbose)
+                print('\t', all_vector_2, flush=True, file=redirect_verbose)
+                print('Similarity score between these two vectors was ', round(all_vector_score, 5),
+                      flush=True,file=redirect_verbose)
+
         if text_score_list:
             wanted_top = min_len
             text_score_list=sorted(text_score_list)[-wanted_top:]
@@ -1158,11 +1527,15 @@ class UniFunc(Pre_Processer, Word_Weighter):
                 print('\t',bad_identifiers_2,flush=True,file=redirect_verbose)
                 print('The Jaccard distance between identifiers is:',round(ids_removed_score,5),flush=True,file=redirect_verbose)
             else: print('No IDs to compare so we skipped Jaccard distance calculation',flush=True,file=redirect_verbose)
-
         #more weight for the entities
         if not only_text:
-            if ids_removed_score:
-                score=(2*ids_removed_score+text_score)/3
+            #if no tokens to score but has ids
+            if ids_removed_score and not text_score_list:                       score=ids_removed_score
+            #if score ids is sufficiently high, and tokens score is very high
+            elif ids_removed_score>=0.5 and text_score==1:                      score=text_score
+            #if ids score is above 0
+            elif ids_removed_score: score=(ids_removed_score+text_score)/3
+            elif bad_identifiers_1 and bad_identifiers_2 and not ids_removed_score: score=(ids_removed_score+text_score)/2
             else: score=text_score
         else:
             score=text_score
@@ -1192,18 +1565,10 @@ class UniFunc(Pre_Processer, Word_Weighter):
 
 if __name__ == '__main__':
     nlp = UniFunc()
-    #str1='Responsible for trypanothione reduction'
-    #str2='Protein associated with trypanothione reductase activity'
-    #print('Similarity score:',nlp.get_similarity_score(str1,str2,verbose=True,only_return=True))
-    #str1='Leghemoglobin reductase activity K0002 (EC 0.0.0.0) ID12345 PRK10411.1  '
-    #str2='Protein associated with trypanothione reductase activity (K0001) ID6789'
-    #print('Similarity score:',nlp.get_similarity_score(str1,str2,verbose=True,only_return=True))
-
-
-
-    str1='NADH-quinone oxidoreductase subunit NuoN'
-    str2='NADH-quinone oxidoreductase subunit N'
-    print('Similarity score:',nlp.get_similarity_score(str1,str2,verbose=False))
-
-
+    str1='Responsible for trypanothione reduction'
+    str2='Protein associated with trypanothione reduction activity'
+    print('Similarity score:',nlp.get_similarity_score(str1,str2,verbose=True,only_return=True))
+    str1='Leghemoglobin reductase activity K0002 (EC 0.0.0.0) ID12345 PRK10411.1  '
+    str2='Protein associated with trypanothione reductase activity (K0001) ID6789'
+    print('Similarity score:',nlp.get_similarity_score(str1,str2,verbose=True,only_return=True))
 
