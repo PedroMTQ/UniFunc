@@ -1,5 +1,5 @@
 from string import punctuation
-from nltk import cluster
+from nltk.cluster.util import cosine_distance
 from nltk.tag.perceptron import PerceptronTagger
 from nltk.corpus import wordnet as wn
 from nltk.tag import SequentialBackoffTagger,_pos_tag
@@ -837,8 +837,10 @@ class Metadata():
         tigrfam_role_names = 'ftp://ftp.tigr.org/pub/data/TIGRFAMs/TIGR_ROLE_NAMES'
         ncbi_metadata = 'https://ftp.ncbi.nlm.nih.gov/hmm/current/hmm_PGAP.tsv'
 
+
         for url in [pfam_metadata,ko_list,tigrfam_role_names,ncbi_metadata]:
             self.download_file(url,output_folder=self.metadata_folder)
+        self.download_file('http://purl.obolibrary.org/obo/go.obo',output_folder=self.unifunc_resources_folder)
 
         eggnog_downloads_page = 'http://eggnog5.embl.de/download/latest/per_tax_level/'
         for taxon_id in self.get_taxon_ids_NOGT(eggnog_downloads_page):
@@ -1265,25 +1267,19 @@ class UniFunc(Pre_Processer, Word_Weighter, Metadata):
                 if edit_distance(syn,word)/max_len<=edit_dist_perc:
                     return word
 
-    def improve_syn_match(self,vector1,vector2):
-        #improving match by replacing vector1 words by synonyms that exist in vector2
-        res=[]
-        for w in vector1:
-            syn_set={w}
-            for synset in wn.synsets(w):
-                for lemma in synset.lemmas():
-                    syn_set.add(lemma.name())
-            best_syn=self.get_best_syn(syn_set,vector2)
-            if best_syn: res.append(best_syn)
-            else: res.append(w)
-        return res
+    def add_wordnet_lemmas(self,res,w):
+        for synset in wn.synsets(w):
+            for lemma in synset.lemmas():
+                to_add = lemma.name()
+                if '_' not in to_add:
+                    res.add(lemma.name())
 
     def add_alternative_tokens(self,vector1):
         #this will mostly add alternative suffixes
         res={}
         for w in vector1:
             res[w]={w}
-
+            self.add_wordnet_lemmas(res[w],w)
             if w=='decarboxylase': res[w].add('carboxy-lyase')
             elif w=='carboxy-lyase': res[w].add('decarboxylase')
             #latin plurals
@@ -1385,7 +1381,7 @@ class UniFunc(Pre_Processer, Word_Weighter, Metadata):
         improved_vector_1,improved_vector_2 = self.get_matching_suffixes(vector_1,vector_2)
         v1,v2=self.build_vector(improved_vector_1,improved_vector_2)
         if not any(v1) or not any(v2):            text_score=0
-        else:            text_score=1-cluster.util.cosine_distance(v1,v2)
+        else:            text_score=1-cosine_distance(v1,v2)
         return text_score
 
     def check_token_intersection(self,tokens_lists_1,tokens_lists_2):
@@ -1505,14 +1501,18 @@ class UniFunc(Pre_Processer, Word_Weighter, Metadata):
                     print('Similarity score between these two vectors was ',round(current_score,5),flush=True,file=redirect_verbose)
         #some annotations are split into multiple sentences when they shouldn't. so we merge all the tokens and check their similarity here
         if all_vector_1 and all_vector_2:
-            all_vector_score = self.score_text(all_vector_1, all_vector_2)
-            text_score_list.append(all_vector_score)
-            if verbose:
-                print('Finding similarity between:', flush=True, file=redirect_verbose)
-                print('\t', all_vector_1, flush=True, file=redirect_verbose)
-                print('\t', all_vector_2, flush=True, file=redirect_verbose)
-                print('Similarity score between these two vectors was ', round(all_vector_score, 5),
-                      flush=True,file=redirect_verbose)
+            if len(all_vector_1)==len(vector_1_list[0]) and len(vector_1_list)==1 and\
+                    len(all_vector_2)==len(vector_2_list[0]) and len(vector_2_list)==1:
+                pass
+            else:
+                all_vector_score = self.score_text(all_vector_1, all_vector_2)
+                text_score_list.append(all_vector_score)
+                if verbose:
+                    print('Finding similarity between:', flush=True, file=redirect_verbose)
+                    print('\t', all_vector_1, flush=True, file=redirect_verbose)
+                    print('\t', all_vector_2, flush=True, file=redirect_verbose)
+                    print('Similarity score between these two vectors was ', round(all_vector_score, 5),
+                          flush=True,file=redirect_verbose)
 
         if text_score_list:
             wanted_top = min_len
