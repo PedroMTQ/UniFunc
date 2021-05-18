@@ -35,6 +35,8 @@ def run_unifunc(str1,str2,verbose=False,console_output=False,threshold=None):
     if threshold: threshold=float(threshold)
     nlp = UniFunc()
     nlp.get_similarity_score(str1, str2, verbose=verbose,threshold=threshold,console_output=console_output)
+    if verbose:
+        nlp.print_citation_unifunc()
 
 def run_example():
     nlp = UniFunc()
@@ -50,6 +52,7 @@ def run_example():
     str1='Leghemoglobin reductase activity K0002 (EC 0.0.0.0) ID12345 PRK10411.1  '
     str2='Protein associated with trypanothione reductase activity (K0001) ID6789'
     print('Similarity score:',nlp.get_similarity_score(str1,str2,verbose=True))
+    nlp.print_citation_unifunc()
 
 
 
@@ -1062,9 +1065,11 @@ class UniFunc(Pre_Processer, Word_Weighter, Metadata):
         self.default_word_count=median([self.word_counter[i] for i in self.word_counter if self.word_counter[i]>1])
 
 
-    def print_citation(self):
-
-        return
+    def print_citation_unifunc(self):
+        paper_doi='https://doi.org/10.1515/hsz-2021-0125'
+        separator='#####################################################################################################################'
+        res=f'{separator}\n# Thank you for using UniFunc, please make sure you cite the respective paper {paper_doi} #\n{separator}'
+        print(res)
 
 
 
@@ -1571,4 +1576,5 @@ if __name__ == '__main__':
     str1='Leghemoglobin reductase activity K0002 (EC 0.0.0.0) ID12345 PRK10411.1  '
     str2='Protein associated with trypanothione reductase activity (K0001) ID6789'
     print('Similarity score:',nlp.get_similarity_score(str1,str2,verbose=True,only_return=True))
+    nlp.print_citation_unifunc()
 

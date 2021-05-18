@@ -3,6 +3,9 @@
 UniFunc is a text mining tool that processes and analysis text similarity between a pair of protein function annotations.
 It is mainly used as a cross-linking mechanism or redundancy elimination tool when processing annotations without any sort of database identifiers.
 
+## Citing UniFunc
+
+Please cite https://doi.org/10.1515/hsz-2021-0125 when using UniFunc.
 
 ## Setting up UniFunc
 
