@@ -36,7 +36,13 @@ def run_unifunc(str1,str2,verbose=False,console_output=False,threshold=None):
     nlp = UniFunc()
     nlp.get_similarity_score(str1, str2, verbose=verbose,threshold=threshold,console_output=console_output)
     if verbose:
-        nlp.print_citation_unifunc()
+        print_citation_unifunc()
+
+def print_citation_unifunc():
+    paper_doi='https://doi.org/10.1515/hsz-2021-0125'
+    separator='#####################################################################################################################'
+    res=f'{separator}\n# Thank you for using UniFunc, please make sure you cite the respective paper {paper_doi} #\n{separator}'
+    print(res)
 
 def run_example():
     nlp = UniFunc()
@@ -52,7 +58,7 @@ def run_example():
     str1='Leghemoglobin reductase activity K0002 (EC 0.0.0.0) ID12345 PRK10411.1  '
     str2='Protein associated with trypanothione reductase activity (K0001) ID6789'
     print('Similarity score:',nlp.get_similarity_score(str1,str2,verbose=True))
-    nlp.print_citation_unifunc()
+    print_citation_unifunc()
 
 
 
@@ -837,11 +843,10 @@ class Metadata():
     def download_all_metadata(self):
         pfam_metadata = 'ftp://ftp.ebi.ac.uk/pub/databases/Pfam/current_release/Pfam-A.hmm.dat.gz'
         ko_list = 'ftp://ftp.genome.jp/pub/db/kofam/ko_list.gz'
-        tigrfam_role_names = 'ftp://ftp.tigr.org/pub/data/TIGRFAMs/TIGR_ROLE_NAMES'
         ncbi_metadata = 'https://ftp.ncbi.nlm.nih.gov/hmm/current/hmm_PGAP.tsv'
 
 
-        for url in [pfam_metadata,ko_list,tigrfam_role_names,ncbi_metadata]:
+        for url in [pfam_metadata,ko_list,ncbi_metadata]:
             self.download_file(url,output_folder=self.metadata_folder)
         self.download_file('http://purl.obolibrary.org/obo/go.obo',output_folder=self.unifunc_resources_folder)
 
@@ -954,20 +959,6 @@ class Metadata():
                 self.add_to_word_counter(split_tokens)
                 line = file.readline()
 
-    def build_freq_dict_tigrfam(self):
-        file_reference = self.metadata_folder + 'TIGR_ROLE_NAMES'
-        print('Adding terms to frequency counter from ', file_reference, flush=True)
-
-        with open(file_reference) as file:
-            line = file.readline()
-            while line:
-                line = line.strip('\n').split('\t')
-                description=line[3]
-                if description not in ['Unknown', 'Other', 'General']:
-                    split_tokens = self.pre_process_string(description)[0]
-                    self.add_to_word_counter(split_tokens)
-                line = file.readline()
-
     def build_freq_dict_pfm(self):
         file_reference = self.metadata_folder + 'hmm_PGAP.tsv'
         print('Adding terms to frequency counter from ', file_reference, flush=True)
@@ -1002,7 +993,6 @@ class Metadata():
         self.build_freq_dict_go_terms()
         self.build_freq_dict_pfam()
         self.build_freq_dict_kofam()
-        self.build_freq_dict_tigrfam()
         self.build_freq_dict_pfm()
         self.build_freq_dict_eggnog()
 
@@ -1063,15 +1053,6 @@ class UniFunc(Pre_Processer, Word_Weighter, Metadata):
         self.wordnet_tagger = WordNetTagger(go_terms=self.go_terms, perceptron_tagger=self.tagger)
         self.tags = {}
         self.default_word_count=median([self.word_counter[i] for i in self.word_counter if self.word_counter[i]>1])
-
-
-    def print_citation_unifunc(self):
-        paper_doi='https://doi.org/10.1515/hsz-2021-0125'
-        separator='#####################################################################################################################'
-        res=f'{separator}\n# Thank you for using UniFunc, please make sure you cite the respective paper {paper_doi} #\n{separator}'
-        print(res)
-
-
 
 
     def tag_tokens_perceptron(self, tokens):
@@ -1576,5 +1557,5 @@ if __name__ == '__main__':
     str1='Leghemoglobin reductase activity K0002 (EC 0.0.0.0) ID12345 PRK10411.1  '
     str2='Protein associated with trypanothione reductase activity (K0001) ID6789'
     print('Similarity score:',nlp.get_similarity_score(str1,str2,verbose=True,only_return=True))
-    nlp.print_citation_unifunc()
+    print_citation_unifunc()
 
