@@ -28,6 +28,7 @@ import re
 from sys import platform
 import os
 os.chdir('..')
+os.chdir('..')
 from source import UniFunc
 #do not change this, it's just for processing steps
 ANNOTATION_SPLITTER='#######'
@@ -54,10 +55,11 @@ FUNCTION_THRESHOLD=0.8
 OUTPUT_WITHOUT_REP=False
 #CHANGE ACCORDINGLY
 #input should be a tsv with orthogroups. the file should be sorted by orthogroups, otherwise this code will break
-INPUT_CLUSTERS = 'Workflows/gene_orthogroup_annotation.tsv'
-INPUT_CLUSTERS = 'Workflows/test.tsv'
-OUTPUT_FUNC_SIMILARITY='Workflows/func_sim.tsv'
-OUTPUT_FUNC_CLUSTER='Workflows/rep_func_cluster.tsv'
+WORK_DIR='Workflows/Representative_function/'
+INPUT_CLUSTERS = f'{WORK_DIR}gene_orthogroup_annotation.tsv'
+INPUT_CLUSTERS = f'{WORK_DIR}test.tsv'
+OUTPUT_FUNC_SIMILARITY=f'{WORK_DIR}func_sim.tsv'
+OUTPUT_FUNC_CLUSTER=f'{WORK_DIR}rep_func_cluster.tsv'
 
 
 def pre_process_annotations(annotation_str):
