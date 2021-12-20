@@ -44,6 +44,15 @@ def print_citation_unifunc():
     res=f'{separator}\n# Thank you for using UniFunc, please make sure you cite the respective paper {paper_doi} #\n{separator}'
     print(res)
 
+def print_version(user,project):
+    import requests
+    response = requests.get(f"https://api.github.com/repos/{user}/{project}/releases/latest")
+    json=response.json()
+    if 'name' in json:
+        print(f'{project}\'s latest release is:',json['name'])
+    else:
+        print('No release available')
+
 def run_example():
     nlp = UniFunc()
     print('####################################')
@@ -543,9 +552,11 @@ class Pre_Processer():
         new_str=new_str.replace('()','')
         new_str=new_str.replace('_','')
         new_str=new_str.replace('-like ',' ')
+        new_str=new_str.replace('-domain-containing ',' ')
         new_str=new_str.replace('-associated ',' ')
         if 'biosynth' in new_str:new_str=new_str.replace('biosynth','synth')
         if new_str.endswith('-like'):new_str=new_str.replace('-like','')
+        if new_str.endswith('-domain-containing'):new_str=new_str.replace('-domain-containing','')
         if new_str.endswith('-associated'):new_str=new_str.replace('-associated','')
         new_str = new_str.replace('. ', '!NEWLINE!')
         new_str = new_str.replace(' / ', '!NEWLINE!')
@@ -1550,6 +1561,7 @@ class UniFunc(Pre_Processer, Word_Weighter, Metadata):
 
 
 if __name__ == '__main__':
+    print(unifunc_folder)
     nlp = UniFunc()
     str1='Responsible for trypanothione reduction'
     str2='Protein associated with trypanothione reduction activity'
