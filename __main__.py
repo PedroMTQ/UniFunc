@@ -3,7 +3,7 @@ import os
 from datetime import datetime
 import sys
 
-from source import run_unifunc,run_example
+from UniFunc import run_unifunc,run_example
 
 
 if __name__ == '__main__':
