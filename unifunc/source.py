@@ -26,9 +26,7 @@ if platform.startswith('win'):    SPLITTER = '\\'
 else:                                SPLITTER = '/'
 
 unifunc_folder = os.path.abspath(os.path.dirname(__file__)).split(SPLITTER)[0:-1]
-unifunc_folder = SPLITTER.join(unifunc_folder)+SPLITTER+'UniFunc'+SPLITTER
-if not os.path.exists(unifunc_folder):
-    unifunc_folder = SPLITTER.join(unifunc_folder) + SPLITTER + 'unifunc' + SPLITTER
+unifunc_folder = SPLITTER.join(unifunc_folder)+SPLITTER
 
 
 def run_unifunc(str1,str2,verbose=False,console_output=False,threshold=None):

@@ -1,0 +1,6 @@
+recursive-include  Workflows/ *
+include Images/*.png
+include Resources/*
+include LICENSE
+include README.md
+include unifunc/*.py

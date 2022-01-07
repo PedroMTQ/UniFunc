@@ -5,9 +5,9 @@ import os
 import sys
 from pathlib import Path
 
-unifunc_path=os.getcwd()+'/UniFunc'
-sys.path.append(unifunc_path)
-from source import UniFunc
+
+from unifunc import source
+
 
 
 
@@ -24,7 +24,7 @@ class Cluster_Representative_Function():
                  representative_threshold,
                  output_without_representative,
                  ):
-        self.unifunc = UniFunc()
+        self.unifunc = source.UniFunc()
         self.input_path = input_path
         self.output_folder = output_folder
         self.verbose = verbose
@@ -285,66 +285,3 @@ class Cluster_Representative_Function():
                     if self.output_without_representative:
                         line=f'{cluster_id}\n'
                         outfile.write(line)
-
-
-
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
-    parser.add_argument('-i', '--input_path', help='[required]\tInput with a tsv of clusters formatted as: gene_id|cluster|annotation. The tsv should be sorted by cluster! Otherwise this code will not work properly.')
-    parser.add_argument('-o', '--output_folder', help='[required]\tOutput folder path')
-
-    parser.add_argument('-v','--verbose',help='Verbose mode for UniFunc. Default is False',action='store_true')
-    parser.add_argument('-st','--similarity_threshold',help='Threshold for similarity analysis.Default is 0.8')
-    parser.add_argument('-kh','--keep_hypothetical',help='Consider hypothetical annotations as not being annotations? Default is False',action='store_true')
-    parser.add_argument('-ra','--remove_unannotated',help='Consider unannotations (i.e., blank functions) in the scording system? Default is False',action='store_true')
-    parser.add_argument('-uw','--unannotated_weight',help='Weight for unannotations (i.e., blank functions) in the scording system? Default is 0.5')
-    parser.add_argument('-rt','--representative_threshold',help='Score to consider a function representative? Default is 0.8')
-    parser.add_argument('-owr','--output_without_representative',help='Output clusters without a representative function? Default is False',action='store_true')
-
-    args = parser.parse_args()
-    input_path = args.input_path
-    output_folder = args.output_folder
-    verbose = args.verbose
-    similarity_threshold = args.similarity_threshold
-    keep_hypothetical = args.keep_hypothetical
-    remove_unannotated = args.remove_unannotated
-    unannotated_weight = args.unannotated_weight
-    representative_threshold = args.representative_threshold
-    output_without_representative = args.output_without_representative
-
-    if not output_folder:
-        output_folder = os.getcwd() + '/rep_cluster_out/'
-
-    if similarity_threshold:
-        similarity_threshold=float(similarity_threshold)
-    else:
-        similarity_threshold=0.8
-
-    if unannotated_weight:
-        unannotated_weight=float(unannotated_weight)
-    else:
-        unannotated_weight=0.5
-
-    if representative_threshold:
-        representative_threshold=float(representative_threshold)
-    else:
-        representative_threshold=0.8
-
-
-    if input_path:
-
-        Cluster_Representative_Function(input_path=input_path,
-                                        output_folder=output_folder,
-                                        verbose=verbose,
-                                        similarity_threshold=similarity_threshold,
-                                        keep_hypothetical=keep_hypothetical,
-                                        remove_unannotated=remove_unannotated,
-                                        unannotated_weight=unannotated_weight,
-                                        representative_threshold=representative_threshold,
-                                        output_without_representative=output_without_representative,
-                                        )
-
-    else:
-        print('Missing input path')
-
