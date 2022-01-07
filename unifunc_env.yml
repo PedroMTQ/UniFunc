@@ -1,9 +1,0 @@
-name: unifunc
-channels:
-  - anaconda
-  - defaults
-dependencies:
-  - nltk
-  - numpy
-  - python
-  - requests
