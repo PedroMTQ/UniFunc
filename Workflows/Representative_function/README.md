@@ -2,9 +2,9 @@ This workflow is related to the issue https://github.com/PedroMTQ/mantis/issues/
 
 ### Running workflow
 
-Just run this outside the UniFunc folder, e.g.:
+To run this do the following:
 
-```python UniFunc/Workflows/Representative_function/Cluster_Representative_Function.py -h```
+```unifunc cluster_function -h```
 
 Use `-h` to check all available variables.
 
