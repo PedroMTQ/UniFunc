@@ -33,7 +33,7 @@ def get_package_version():
 HERE = pathlib.Path(__file__).parent
 
 # The text of the README file
-README = (HERE / "README.md").read_text()
+README = (HERE / "README.md").read_text(encoding='utf-8')
 
 long_description='UniFunc is a text mining tool that processes and analysis text similarity between a pair of protein function annotations. It is mainly used as a cross-linking mechanism or redundancy elimination tool when processing annotations without any sort of database identifiers.'
 
