@@ -7,17 +7,27 @@ It is mainly used as a cross-linking mechanism or redundancy elimination tool wh
 
 Please cite https://doi.org/10.1515/hsz-2021-0125 when using UniFunc.
 
-## Setting up UniFunc
+## Installing unifunc
 
-UniFunc only requires python (developed with python 3.9) and the python package NLTK, both can be installed with conda by executing:
 
-`conda install python`
+Installing `unifunc` from the `conda-forge` channel can be achieved by adding `conda-forge` to your channels with:
 
-`conda install -c anaconda nltk `
+```
+conda config --add channels conda-forge
+conda config --set channel_priority strict
+```
 
-If you prefer a conda environment is also provided `unifunc_env.yml`, to install it run:
+Once the `conda-forge` channel has been enabled, `unifunc` can be installed with:
 
-`conda env create -f unifunc_env.yml`
+```
+conda install unifunc
+```
+
+It is possible to list all of the versions of `unifunc` available on your platform with:
+
+```
+conda search unifunc --channel conda-forge
+```
 
 
 ## Using UniFunc
@@ -35,7 +45,13 @@ To use verbose mode add the argument `-v`, to redirect output to a file, add the
 
 To run a sample execution use: `unifunc --example`
 
-##### To update corpus:
+## Using workflows
+
+At the moment, only one workflow is available [cluster_function](https://github.com/PedroMTQ/UniFunc/tree/main/Workflows/Representative_function).
+To use it run `unifunc cluster_function -h` and you will get all the information regarding inputs.
+
+
+## Updating the corpus
 1. Delete all files in `UniFunc/Resources/`
 2. Go to https://www.uniprot.org/uniprot/?query=reviewed 
 3. Search for all protein entries
