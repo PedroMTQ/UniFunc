@@ -60,10 +60,16 @@ def run_example():
     str2='Protein associated with trypanothione reductase activity'
     print('Similarity score:',nlp.get_similarity_score(str1,str2,verbose=True))
     print('####################################')
-    print('###############TEST ###############')
+    print('###############TEST 2###############')
     print('####################################')
     str1='Leghemoglobin reductase activity K0002 (EC 0.0.0.0) ID12345 PRK10411.1  '
     str2='Protein associated with trypanothione reductase activity (K0001) ID6789'
+    print('Similarity score:',nlp.get_similarity_score(str1,str2,verbose=True))
+    print('####################################')
+    print('###############TEST 3###############')
+    print('####################################')
+    str1='Fucoxanthin-chlorophyll a-c binding protein, chloroplastic  '
+    str2='fucoxanthin chlorophyll BBBBa/caaaa protein  a/c 8'
     print('Similarity score:',nlp.get_similarity_score(str1,str2,verbose=True))
     print_citation_unifunc()
 
@@ -75,12 +81,37 @@ def run_example():
 
 class Word_Weighter():
 
+    def compile_patterns(self):
+        self.compiled_patterns={
+            'uniprot':re.compile('\{.*\}\.'),
+            'is_abbreviation':re.compile('#[a-z]?[A-Z]+'),
+            'is_good_word':re.compile('\.?\d+'),
+            'remove_ecs_1':re.compile('\.|[a-zA-Z]|\d{1,3}'),
+            'remove_ecs_2':re.compile('-'),
+            'ec':re.compile('\d(\.(-|\d{1,3}|([a-zA-Z]\d{1,3}))){2,3}'),
+            'ec_to_remove':re.compile('(\(EC\s? \)|\(EC:\s?\)|\(ec\s?\)|\(ec:\s?\)|\[EC\s?\]|\[EC:\s?\]|\[ec\s?\]|\[ec:\s?\])'),
+            'roman':re.compile('[^a-zA-Z0-9][IV]+[^a-zA-Z0-9\.]'),
+            'bad_ion':re.compile('\(\d\s\)'),
+            'ion':re.compile('(\(\d\([\+\-]\)\))|(\(\d\)\([\+\-])\)'),
+            'p1':re.compile('\('),
+            'p2':re.compile('\)'),
+            'unite_terms':re.compile('\d+\s'),
+            'http':re.compile('\[http.*\]'),
+            'digit':re.compile('\d+'),
+            'taxons_search':re.compile('href="\d+/"'),
+            'valid_split':re.compile('[a-zA-Z]{3,}/[a-zA-Z]{3,}'),
+            'invalid_split':re.compile('[a-zA-Z]{1,2}/[a-zA-Z]{1,2}'),
+            'invalid_hyphen':re.compile('[a-zA-Z]{4,}-[a-zA-Z]{4,}'),
+
+        }
+
+
     def process_uniprot(self,line):
         if 'Entry' not in line:
             line = line.split('\t')
             header,annotation,function_description=line
             function_description = function_description.replace('FUNCTION: ', '')
-            function_rule = re.search('\{.*\}\.', function_description)
+            function_rule = self.compiled_patterns['uniprot'].search(function_description)
             if function_rule:
                 function_description = function_description.replace(function_rule.group(), '')
             return header,annotation,function_description
@@ -93,7 +124,7 @@ class Word_Weighter():
             return False
 
     def is_abbreviation(self, x):
-        if re.search('#[a-z]?[A-Z]+', x):
+        if self.compiled_patterns['is_abbreviation'].search(x):
             return True
         return False
 
@@ -107,7 +138,7 @@ class Word_Weighter():
         if word in stop_words or \
             not word or\
             len(word) == 1 or \
-            re.match('\.?\d+', word):
+            self.compiled_patterns['is_good_word'].match(word):
             return False
         return True
 
@@ -225,16 +256,16 @@ class Pre_Processer():
         matches = []
         removed_ecs = set()
         # greedy match of confounders
-        ec_pattern = re.compile('\d(\.(-|\d{1,3}|([a-zA-Z]\d{1,3}))){2,3}')
-        search = re.finditer(ec_pattern, string_to_search)
+        search = self.compiled_patterns['ec'].finditer(string_to_search)
         for i in search:
             ec = i.group()
             passed = False
             start = i.span()[0]
             end = i.span()[1]
             if len(string_to_search) > end + 1:
-                if string_to_search[start - 1] != '.' and string_to_search[end - 1] != '.' and not re.match(
-                        '\.|[a-zA-Z]|\d{1,3}', string_to_search[end + 1]) and not re.match('-', string_to_search[end]):
+                if string_to_search[start - 1] != '.' and string_to_search[end - 1] != '.' and \
+                        not self.compiled_patterns['remove_ecs_1'].match(string_to_search[end + 1]) \
+                        and not self.compiled_patterns['remove_ecs_2'].match(string_to_search[end]):
                     passed = True
             else:
                 if string_to_search[start - 1] != '.':
@@ -252,29 +283,28 @@ class Pre_Processer():
             end -= removed_length
             current_str = current_str[:start] + current_str[end:]
             removed_length += end - start
-        to_remove_pattern = re.compile(
-            '(\(EC\s? \)|\(EC:\s?\)|\(ec\s?\)|\(ec:\s?\)|\[EC\s?\]|\[EC:\s?\]|\[ec\s?\]|\[ec:\s?\])')
-        search = re.search(to_remove_pattern, current_str)
+        search = self.compiled_patterns['ec_to_remove'].search(current_str)
         if search:
             current_str = current_str.replace(search.group(), '')
         return current_str, removed_ecs
 
     def remove_pattern(self, string_to_search, pattern):
         #this sort of patterns should always be preceded by a not a letter or a digit. or preceded by space ( or [
-        negative_pattern='[A-Za-z\-\d+\_\.\']'
-        compiled_pattern=re.compile('(?<!('+negative_pattern+'))'+pattern+'(?!('+negative_pattern+'))')
+
+        if pattern not in self.compiled_patterns:
+            negative_pattern = '[A-Za-z\-\d+\_\.\']'
+            compiled_pattern = re.compile('(?<!(' + negative_pattern + '))' + pattern + '(?!(' + negative_pattern + '))')
+            self.compiled_patterns[pattern]=compiled_pattern
         patterns_removed = set()
-        search = re.search(compiled_pattern, string_to_search)
+        search = self.compiled_patterns[pattern].search(string_to_search)
         while search:
             patterns_removed.add(search.group())
             start = search.span()[0]
             end = search.span()[1]
-            #if string_to_search[start + 1] == '(': start += 2
-            #if string_to_search[end - 1] == ')': end -= 1
             string_to_search = list(string_to_search)
             string_to_search[start:end] = ''
             string_to_search = ''.join(string_to_search)
-            search = re.search(compiled_pattern, string_to_search)
+            search = self.compiled_patterns[pattern].search(string_to_search)
         return string_to_search, patterns_removed
 
     def convert_to_arabic_digits(self, roman_digit):
@@ -307,18 +337,16 @@ class Pre_Processer():
 
     def replace_roman_numerals(self, string_to_search):
         # we wont use high roman numerals since they dont usually come up in this scenario
-        roman_pattern = re.compile('[^a-zA-Z0-9][IV]+[^a-zA-Z0-9\.]')
-        search = re.search(roman_pattern, string_to_search)
+        search = self.compiled_patterns['roman'].search(string_to_search)
         while search:
             start = search.span()[0]
             end = search.span()[1]
             roman_digit = re.search('[IV]+', search.group()).group()
             string_to_search = list(string_to_search)
-            converted_number = search.group().replace(roman_digit.upper(),
-                                                      str(self.convert_to_arabic_digits(roman_digit)))
+            converted_number = search.group().replace(roman_digit.upper(), str(self.convert_to_arabic_digits(roman_digit)))
             string_to_search[start:end] = converted_number
             string_to_search = ''.join(string_to_search)
-            search = re.search(roman_pattern, string_to_search)
+            search = self.compiled_patterns['roman'].search(string_to_search)
 
         return string_to_search
 
@@ -337,23 +365,21 @@ class Pre_Processer():
         return temp_sentence
 
     def remove_bad_pattern_ions(self, string_to_search):
-        bad_ion_pattern = re.compile('\(\d\s\)')
-        search = re.search(bad_ion_pattern, string_to_search)
+        search = self.compiled_patterns['bad_ion'].search(string_to_search)
         while search:
             ion_str = search.group()
             new_ion_str = ion_str.replace(' ', '')
             string_to_search = string_to_search.replace(ion_str, new_ion_str)
-            search = re.search(bad_ion_pattern, string_to_search)
+            search = self.compiled_patterns['bad_ion'].search(string_to_search)
         return string_to_search
 
     def simplify_ions(self, string_to_search):
-        ion_pattern = re.compile('(\(\d\([\+\-]\)\))|(\(\d\)\([\+\-])\)')
-        search = re.search(ion_pattern, string_to_search)
+        search = self.compiled_patterns['ion'].search(string_to_search)
         while search:
             ion_str = search.group()
             new_ion_str = '(' + ion_str.replace('(', '').replace(')', '') + ')'
             string_to_search = string_to_search.replace(ion_str, new_ion_str)
-            search = re.search(ion_pattern, string_to_search)
+            search = self.compiled_patterns['ion'].search(string_to_search)
         return string_to_search
 
     def get_parentheses_above_range(self, starting_range, p2_ranges):
@@ -379,10 +405,8 @@ class Pre_Processer():
         return res, remaining
 
     def remove_parentheses(self, string_to_search):
-        p1_pattern = re.compile('\(')
-        p2_pattern = re.compile('\)')
-        p1_search = re.finditer(p1_pattern, string_to_search)
-        p2_search = re.finditer(p2_pattern, string_to_search)
+        p1_search = self.compiled_patterns['p1'].finditer(string_to_search)
+        p2_search = self.compiled_patterns['p2'].finditer(string_to_search)
         p1_search = [i.span() for i in p1_search]
         p2_search = [i.span() for i in p2_search]
         res = list(string_to_search)
@@ -418,7 +442,8 @@ class Pre_Processer():
             if i == 0:
                 res.append(string_list[i])
             else:
-                if (len(string_list[i]) == 1 and string_list[i].isupper()) or re.search('\d+\s', string_list[i]):
+                if (len(string_list[i]) == 1 and string_list[i].isupper()) or\
+                        self.compiled_patterns['unite_terms'].search(string_list[i]):
                     c += 1
                     res[i - c] += ' ' + string_list[i]
                 else:
@@ -495,6 +520,28 @@ class Pre_Processer():
                 parentheses_res.append(temp)
         return res,parentheses_res
 
+    def split_by_lines(self,string_to_process):
+        string_to_process = string_to_process.replace('. ', '!NEWLINE!')
+        string_to_process = string_to_process.replace(' / ', '!NEWLINE!')
+        string_to_process = string_to_process.replace('\t', '!NEWLINE!')
+        to_replace=self.compiled_patterns['valid_split'].findall(string_to_process)
+        for tr in to_replace:
+            tr_split=tr.replace('/','!NEWLINE!')
+            string_to_process=string_to_process.replace(tr,tr_split)
+
+        return string_to_process
+
+    def replace_hyphens(self,string_to_process):
+        to_replace=self.compiled_patterns['invalid_hyphen'].findall(string_to_process)
+        for tr in to_replace:
+            tr_split=tr.replace('-',' ')
+            string_to_process=string_to_process.replace(tr,tr_split)
+        to_replace=self.compiled_patterns['invalid_split'].findall(string_to_process)
+        for tr in to_replace:
+            tr_split=tr.replace('/','-')
+            string_to_process=string_to_process.replace(tr,tr_split)
+        return string_to_process
+
 
     def split_by_alternatives(self,string_to_process):
         if '/' not in string_to_process: return string_to_process
@@ -556,9 +603,8 @@ class Pre_Processer():
         if new_str.endswith('-like'):new_str=new_str.replace('-like','')
         if new_str.endswith('-domain-containing'):new_str=new_str.replace('-domain-containing','')
         if new_str.endswith('-associated'):new_str=new_str.replace('-associated','')
-        new_str = new_str.replace('. ', '!NEWLINE!')
-        new_str = new_str.replace(' / ', '!NEWLINE!')
-        new_str = new_str.replace('\t', '!NEWLINE!')
+        new_str=self.replace_hyphens(new_str)
+        new_str=self.split_by_lines(new_str)
         new_str=self.split_by_alternatives(new_str)
         lines = new_str.split('!NEWLINE!')
         res = []
@@ -595,8 +641,7 @@ class Pre_Processer():
                          'UBERON|Pfam|RESID|MA|SO|UniPathway|MP|BRENDA|DOI|pmid|Wikipeda|Wikilpedia|MGI|DDANAT|PO|ABA):[A-Za-z\d\-]+)*\]'
         res, go_obo_ids = self.remove_pattern(sentence, go_obo_pattern)
         go_obo_ids_res = {}
-        http_pattern = re.compile('\[http.*\]')
-        search_http = re.search(http_pattern, res)
+        search_http = self.compiled_patterns['http'].search(res)
         if search_http:
             res = res.replace(search_http.group(), '')
         if go_obo_ids:
@@ -666,7 +711,7 @@ class Pre_Processer():
         dict_ids['cog'].update(removed_ids)
         res, removed_ids = self.remove_pattern(res, go_pattern)
         res = res.replace(' go:', '')
-        removed_ids = {re.search('\d+', i).group() for i in removed_ids}
+        removed_ids = {self.compiled_patterns['digit'].search(i).group() for i in removed_ids}
         dict_ids['go'].update(removed_ids)
         res, removed_ids = self.remove_pattern(res, pubmed_pattern)
         res = res.replace(' pubmed:', '')
@@ -845,8 +890,8 @@ class Metadata():
                 webpage = req.text
             except:
                 c += 1
-        taxons_search = re.findall('href="\d+/"', webpage)
-        taxons = [re.search('\d+', i).group() for i in taxons_search]
+        taxons_search = self.compiled_patterns['taxons_search'].findall('href="\d+/"', webpage)
+        taxons = [self.compiled_patterns['digit'].search(i).group() for i in taxons_search]
         return taxons
 
     def download_all_metadata(self):
@@ -1019,6 +1064,7 @@ class UniFunc(Pre_Processer, Word_Weighter, Metadata):
         #this is just used to trigger gene ontologies look up, might remove it
         self.nlp_threshold = 0.9
         self.n_grams_range = [1]
+        self.compile_patterns()
         str_n_gram = '_'.join([str(i) for i in self.n_grams_range])
         self.unifunc_resources_folder=unifunc_folder+'Resources/'
         self.go_terms_path=self.unifunc_resources_folder+'go.obo'
@@ -1157,7 +1203,7 @@ class UniFunc(Pre_Processer, Word_Weighter, Metadata):
                                     if t[1] not in ['ADP','CONJ','DET','PRON','PRT'] and\
                                         t[0].lower() not in self.words_to_remove and\
                                         len(t[0])>1 and\
-                                        not  re.search('\d+',t[0]):
+                                        not  self.compiled_patterns['digit'].search(t[0]):
                                         go_terms.add(t[0])
                             for token_list in split_tokens:
                                 if not self.token_list_too_small(token_list,split_tokens):

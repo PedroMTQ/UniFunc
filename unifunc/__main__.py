@@ -7,12 +7,12 @@ from unifunc import source
 
 def argv_cluster_representative_function():
     from Workflows.Representative_function.Cluster_Representative_Function import Cluster_Representative_Function
-    parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
+    parser = argparse.ArgumentParser(description='This workflow selects a representative function per cluster of genes and respective functions',formatter_class=argparse.RawTextHelpFormatter)
     #just a placeholder
     parser.add_argument('workflow')
 
     parser.add_argument('-i', '--input_path',
-                        help='[required]\tInput with a tsv of clusters formatted as: gene_id|cluster|annotation. The tsv should be sorted by cluster! Otherwise this code will not work properly.')
+                        help='[required]\ttab seperated input with the following format: gene_id|cluster|annotation. Either <path/to/file.tsv> or <stdin> are accepted ')
     parser.add_argument('-o', '--output_folder', help='[required]\tOutput folder path')
 
     parser.add_argument('-v', '--verbose', help='Verbose mode for UniFunc. Default is False', action='store_true')
@@ -92,12 +92,11 @@ def main():
                                                      ' \\___/ |_| |_||_|\\_|     \\__,_||_| |_| \\___|, a functional annotation text similarity analysis tool.\n\n'+
                                                      'UniFunc can be run in two modes:\n' +
                                                      'The default mode returns the similarity score (float) between the provided strings, to run it use: '
-                                                     '<python UniFunc "this is string1" "this is string2">\n' +
+                                                     '<unifunc "this is string1" "this is string2">\n' +
                                                      'The secondary mode requires the user to set a threshold (e.g. 0.95), and True will be returned if the string similarity is above the threshold, and False otherwise. To run it use: ' +
-                                                     '<python UniFunc string1 string2 -t 0.95>\n' +
+                                                     '<unifunc string1 string2 -t 0.95>\n' +
                                                      'To use verbose mode add <-v>, to redirect output to a file, add <-t file_path>'
                                          ,formatter_class=argparse.RawTextHelpFormatter)
-
         parser.add_argument('str1')
         parser.add_argument('str2')
         parser.add_argument('-v','--verbose',action='store_true',help='Verbose mode for UniFunc')

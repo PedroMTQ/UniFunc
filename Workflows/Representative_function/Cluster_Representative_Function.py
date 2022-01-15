@@ -4,7 +4,7 @@ import re
 import os
 import sys
 from pathlib import Path
-
+from sys import stdin
 
 from unifunc import source
 
@@ -41,8 +41,15 @@ class Cluster_Representative_Function():
         self.OUTPUT_FUNC_SIMILARITY = f'{output_folder}func_sim.tsv'
         self.OUTPUT_FUNC_CLUSTER = f'{output_folder}rep_func_cluster.tsv'
         Path(self.output_folder).mkdir(parents=True, exist_ok=True)
-
-        self.get_representative_function()
+        print(f'Creating functional clusters for {self.input_path}')
+        if self.input_path == 'stdin':
+            self.input_path=stdin
+            self.get_representative_function()
+        else:
+            if os.path.exists(self.input_path):
+                self.get_representative_function()
+            else:
+                print('Input does not exist!')
 
     def pre_process_annotations(self,annotation_str):
         annotation_str=annotation_str.strip()
@@ -68,27 +75,27 @@ class Cluster_Representative_Function():
         if not self.keep_hypothetical:
             if 'hypothetical' in annotation_str: annotation_str=''
             if 'predicted' in annotation_str: annotation_str=''
-        #if annotation_str in ['predicted protein','predicted protein, partial','hypothetical protein','hypothetical protein, partial',]:        annotation_str=''
         return annotation_str.strip()
 
     def read_clustered_annotations(self):
-        #this yields all clusters, one by one - less memory footprint
-        #FILE NEEDS TO BE SORTED BY CLUSTER_ID
-        with open(self.input_path) as file:
-            file.readline()
-            temp=[]
-            for line in file:
-                line=line.strip('\n')
+        if self.input_path is stdin:
+            file = sys.stdin
+        else:
+            file = open(self.input_path)
+        res={}
+        for line in file:
+            line=line.strip('\n')
+            if line:
                 line=line.split('\t')
                 gene_id,cluster_id,annotation=line
                 annotation=self.pre_process_annotations(annotation)
-                if temp and cluster_id!=previous_cluster_id:
-                    yield previous_cluster_id,temp
-                    temp=[]
-                temp.append([gene_id,annotation])
-                previous_cluster_id=cluster_id
-        if temp:
-            yield previous_cluster_id,temp
+                if cluster_id not in res: res[cluster_id]=[]
+                res[cluster_id].append([gene_id,annotation])
+            #breaking point for stdin
+            else:
+                break
+        for cluster_id in res:
+            yield cluster_id,res[cluster_id]
 
     def compare_annotations(self):
         #this will yield the cluster_id, the genes (gene_id+annotations) a non-redundant score of all-vs-all annotations
