@@ -3,6 +3,14 @@
 UniFunc is a text mining tool that processes and analysis text similarity between a pair of protein function annotations.
 It is mainly used as a cross-linking mechanism or redundancy elimination tool when processing annotations without any sort of database identifiers.
 
+Current release info
+====================
+
+| Name | Downloads | Version | Platforms | Latest release |
+| --- | --- |---|---|---|
+| [![Conda Recipe](https://img.shields.io/badge/recipe-unifunc-green.svg)](https://anaconda.org/conda-forge/unifunc) | [![Conda Downloads](https://img.shields.io/conda/dn/conda-forge/unifunc.svg)](https://anaconda.org/conda-forge/unifunc) | [![Conda Version](https://img.shields.io/conda/vn/conda-forge/unifunc.svg)](https://anaconda.org/conda-forge/unifunc) | [![Conda Platforms](https://img.shields.io/conda/pn/conda-forge/unifunc.svg)](https://anaconda.org/conda-forge/unifunc) | [![Conda Platforms](https://anaconda.org/conda-forge/unifunc/badges/latest_release_relative_date.svg)](https://anaconda.org/conda-forge/unifunc) |
+
+
 ## Citing UniFunc
 
 Please cite https://doi.org/10.1515/hsz-2021-0125 when using UniFunc.
