@@ -1139,6 +1139,10 @@ class UniFunc(Pre_Processer, Word_Weighter, Metadata):
             nltk_download('wordnet',quiet=True)
         except:
             print('Already downloaded Wordnet!')
+        try:
+            nltk_download('omw-1.4',quiet=True)
+        except:
+            print('Already downloaded omw-1.4!')
 
     ####GO SCORING
     def save_go_pickle(self):
