@@ -271,6 +271,25 @@ class Cluster_Representative_Function():
 
 
 
+    def get_most_significant_function(self,functions_list):
+        functions_score={}
+        for temp_string in functions_list:
+            functions_score[temp_string]=0
+            tokens_lists,putative_ids = self.unifunc.pre_process_string(temp_string)
+            if putative_ids: functions_score[temp_string]+=self.unifunc.default_word_count
+            n_tokens = sum([len(i) for i in tokens_lists])
+            if tokens_lists:
+                vector_list = self.process_string_nlp(tokens_lists)
+                for vector in vector_list:
+                    if self.unifunc.wordnet_tagger.placeholder.lower() in vector: vector.remove(self.unifunc.wordnet_tagger.placeholder.lower())
+                    tf_idf_dict = self.unifunc.calculate_tf_idf(vector)
+                    current_score=sum(tf_idf_dict.values())
+                    functions_score[temp_string]+=current_score
+            if n_tokens:
+                functions_score[temp_string]/=n_tokens
+        return [max(functions_score,key=functions_score.get)]
+
+
     def get_representative_function(self):
         annotations_scores_generator=self.compare_annotations()
         with open(self.OUTPUT_FUNC_CLUSTER,'w+') as outfile:
@@ -284,11 +303,14 @@ class Cluster_Representative_Function():
                     score=l[0]
                     annotations=l[1]
                     line=[cluster_id,score]
+                    if len(annotations)>1:
+                        annotations=self.get_most_significant_function(annotations)
                     line.extend(annotations)
-                    line.append('\n')
-                    line='\t'.join(line)
+                    line='\t'.join(line)+'\n'
+
                     outfile.write(line)
                 if not temp:
                     if self.output_without_representative:
                         line=f'{cluster_id}\n'
                         outfile.write(line)
+
