@@ -270,6 +270,17 @@ class Cluster_Representative_Function():
         return (X - minX) / (maxX - minX)
 
 
+    def process_string_nlp(self,tokens_lists):
+        res=[]
+        for tokens in tokens_lists:
+            temp_tokens=[i for i in tokens if i]
+            default_tagged_tokens = self.unifunc.tag_tokens_perceptron(temp_tokens)
+            wordnet_tagged_tokens = self.unifunc.tag_tokens_wordnet(temp_tokens)
+            tagged_tokens=self.unifunc.choose_best_tagging(wordnet_tagged_tokens,default_tagged_tokens)
+            removed_tags = self.unifunc.remove_unwanted_tokens(tagged_tokens)
+            if removed_tags:
+                res.append(removed_tags)
+        return res
 
     def get_most_significant_function(self,functions_list):
         functions_score={}
