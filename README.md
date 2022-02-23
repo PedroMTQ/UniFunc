@@ -31,12 +31,6 @@ Once the `conda-forge` channel has been enabled, `unifunc` can be installed with
 conda install unifunc
 ```
 
-It is possible to list all of the versions of `unifunc` available on your platform with:
-
-```
-conda search unifunc --channel conda-forge
-```
-
 
 ## Using UniFunc
 UniFunc can be run in two modes:

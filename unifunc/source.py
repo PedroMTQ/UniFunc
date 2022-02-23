@@ -1575,12 +1575,11 @@ class UniFunc(Pre_Processer, Word_Weighter, Metadata):
         #more weight for the entities
         if not only_text:
             #if no tokens to score but has ids
-            if ids_removed_score and not text_score_list:                       score=ids_removed_score
+            if ids_removed_score and not text_score:                       score=ids_removed_score
             #if score ids is sufficiently high, and tokens score is very high
             elif ids_removed_score>=0.5 and text_score==1:                      score=text_score
-            #if ids score is above 0
-            elif ids_removed_score: score=(ids_removed_score+text_score)/3
-            elif bad_identifiers_1 and bad_identifiers_2 and not ids_removed_score: score=(ids_removed_score+text_score)/2
+            #if ids score is above 0 and text score is low
+            elif ids_removed_score and text_score: score=(ids_removed_score+text_score)/2
             else: score=text_score
         else:
             score=text_score
