@@ -1356,6 +1356,8 @@ class UniFunc(Pre_Processer, Word_Weighter, Metadata):
             #remove parentheses
             if w.startswith('[') and w.endswith(']'): res[w].add(w.strip('[]'))
             if w.startswith('(') and w.endswith(')'): res[w].add(w.strip('()'))
+        for w in res:
+            res[w]=sorted(res[w])
         return res
 
     def find_matching_tokens(self,synset1,synset2):
@@ -1371,9 +1373,12 @@ class UniFunc(Pre_Processer, Word_Weighter, Metadata):
                             matches_found[w2]=w1
                         else:
                             synsw2 = synset2[w2]
-                            syns_intersect=synsw1.intersection(synsw2)
+                            temp_synsw1=set(synsw1)
+                            temp_synsw2=set(synsw2)
+                            syns_intersect=temp_synsw1.intersection(temp_synsw2)
+                            syns_intersect=sorted(syns_intersect)
                             if syns_intersect:
-                                best_syn=syns_intersect.pop()
+                                best_syn=syns_intersect[0]
                                 matches_found[w1]=best_syn
                                 matches_found[w2]=best_syn
         return matches_found
